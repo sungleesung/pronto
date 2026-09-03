@@ -4,3 +4,9 @@ dist/
 *.log
 coverage/
 
+
+# Installer build artifacts and the binaries staged into the app bundle.
+# These are ~60MB each and are produced by build.sh, not authored here.
+installer/CorySetup/build/
+installer/CorySetup/Resources/pronto
+installer/CorySetup/Resources/imsg
