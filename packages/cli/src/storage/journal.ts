@@ -25,11 +25,15 @@ export interface AdmissionInput {
   chatId: number;
   chatKey: string;
   conversation?: ConversationReference;
+  /** Epoch ms when Messages recorded the triggering message, when the provider reported it. */
+  occurredAt?: number;
   providerGuid: string;
   request: string;
 }
 
 export type QueuedEvent = AdmissionInput &
+  /** Epoch ms of the delivery_events row, so a turn can report its own queue latency. */
+  { admittedAt?: number } &
   (
     | { state: "admitted" }
     | { acceptedReply: string; lease: string; state: "ready_to_send" }
@@ -101,8 +105,8 @@ export class DeliveryJournal {
         .query(
           `INSERT INTO delivery_events
            (provider_guid, chat_key, chat_id, conversation_reference, activation_tag,
-            tagged_request, state, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            tagged_request, state, created_at, updated_at, occurred_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.providerGuid,
@@ -116,6 +120,7 @@ export class DeliveryJournal {
           rateLimited ? "rate_limited" : "admitted",
           now,
           now,
+          input.occurredAt ?? null,
         );
       return { status: rateLimited ? ("rate-limited" as const) : ("accepted" as const) };
     })();
@@ -137,7 +142,7 @@ export class DeliveryJournal {
     const row = this.database
       .query(
         `SELECT provider_guid, chat_key, chat_id, conversation_reference, activation_tag,
-                tagged_request, state, accepted_reply, lease_token
+                tagged_request, state, accepted_reply, lease_token, created_at, occurred_at
          FROM delivery_events
          WHERE state IN ('admitted', 'ready_to_send') AND tagged_request IS NOT NULL
          ORDER BY created_at ASC, rowid ASC
@@ -154,12 +159,16 @@ export class DeliveryJournal {
           state: "admitted" | "ready_to_send";
           accepted_reply: string | null;
           lease_token: string | null;
+          created_at: number;
+          occurred_at: number | null;
         }
       | null;
     if (row === null) return null;
     const event = {
+      admittedAt: row.created_at,
       chatId: row.chat_id,
       chatKey: row.chat_key,
+      ...(row.occurred_at === null ? {} : { occurredAt: row.occurred_at }),
       ...(row.conversation_reference === null
         ? {}
         : { conversation: parseConversationReference(row.conversation_reference, row.chat_id) }),
@@ -177,6 +186,24 @@ export class DeliveryJournal {
       lease: row.lease_token,
       state: "ready_to_send",
     };
+  }
+
+  /**
+   * Wall-clock milliseconds each recent delivered turn spent between admission and
+   * settlement. This is the "model half" of the round trip; it excludes the time the
+   * message spent reaching us from Messages.
+   */
+  recentTurnDurations(limit = 5): number[] {
+    const rows = this.database
+      .query(
+        `SELECT updated_at - created_at AS duration
+         FROM delivery_events
+         WHERE state = 'delivered' AND updated_at >= created_at
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(Math.max(1, Math.min(limit, 50))) as { duration: number }[];
+    return rows.map((row) => row.duration);
   }
 
   cursor(): number | undefined {

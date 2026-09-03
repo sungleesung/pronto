@@ -5,6 +5,8 @@ export interface ActivatedRequest {
   chatId: number;
   conversation: ConversationReference;
   isFromMe: boolean;
+  /** When Messages recorded the triggering message, ISO 8601, null when the provider omits it. */
+  occurredAt: string | null;
   providerGuid: string;
   request: string;
   rowId: number;
@@ -69,6 +71,7 @@ export function activatedRequest(
     chatId: event.conversation.chatId,
     conversation: event.conversation,
     isFromMe: message.fromMe,
+    occurredAt: message.occurredAt,
     providerGuid: message.providerMessageId,
     request: activation.request,
     rowId: message.rowId,

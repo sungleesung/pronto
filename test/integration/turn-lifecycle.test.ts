@@ -108,6 +108,7 @@ const activation: ActivatedRequest = {
     version: 1,
   },
   isFromMe: false,
+  occurredAt: "2026-09-01T12:00:00.000Z",
   providerGuid: "IN-1",
   request: "Draft the launch note.",
   rowId: 1,
@@ -149,6 +150,62 @@ async function harness(primary: RuntimeAdapter, fallback?: RuntimeAdapter) {
 }
 
 describe("turn lifecycle", () => {
+  test.each([
+    ["a participant", false, "IN-ECHO-PARTICIPANT"],
+    ["the owner", true, "IN-ECHO-OWNER"],
+  ])("echoes the request back when %s sent it", async (_label, isFromMe, guid) => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "On it." },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({
+        ...activation,
+        isFromMe,
+        providerGuid: guid,
+        request: "check the deploy",
+      });
+      await h.coordinator.idle();
+      expect(h.transport.sends).toHaveLength(1);
+      expect(h.transport.sends[0]!.text).toBe(
+        "Helper \u00b7 re: \u201ccheck the deploy\u201d\nOn it.",
+      );
+    } finally {
+      h.close();
+    }
+  });
+
+  test("answers the latency probe from the journal without running a model turn", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "should never be produced" },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({
+        ...activation,
+        occurredAt: new Date(Date.now() - 5_000).toISOString(),
+        providerGuid: "IN-PROBE",
+        request: "ping test",
+      });
+      await h.coordinator.idle();
+
+      expect(primary.inputs).toHaveLength(0);
+      expect(h.transport.sends).toHaveLength(1);
+      const sent = h.transport.sends[0]!.text;
+      expect(sent).toContain("Helper \u00b7 re: \u201cping test\u201d");
+      expect(sent).toContain("Latency for this message:");
+      expect(sent).toContain("detect");
+      expect(sent).toContain("handle");
+      expect(sent).not.toContain("should never be produced");
+    } finally {
+      h.close();
+    }
+  });
+
   test("switches only on explicit intent and makes the folder durable after delivery", async () => {
     const primary = new FakeAdapter("codex", {
       output: { reply: "Working there." },

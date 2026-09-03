@@ -9,6 +9,7 @@ import {
 } from "../imessage/reply-format";
 import type { ChainedRuntimeResult, RuntimeChain } from "../runtimes/chain";
 import type { RuntimeInput } from "../runtimes/types";
+import { formatLatencyReport, isLatencyProbe } from "./latency-probe";
 import { chatKeyForId } from "../storage/chat-key";
 import type { DeliveryJournal, QueuedEvent } from "../storage/journal";
 import type { MemoryStore } from "../storage/memory";
@@ -191,6 +192,33 @@ export class TurnProcessor {
         const state = this.dependencies.journal.state(event.providerGuid);
         if (state === "sending") this.dependencies.journal.markAmbiguous(event.providerGuid, lease);
         else if (state === "ready_to_send") this.dependencies.journal.markFailed(event.providerGuid, lease);
+      }
+      return;
+    }
+
+    // "ping test" answers from the journal alone. Skipping the runtime is the point:
+    // it separates transport latency from model latency instead of summing them.
+    if (isLatencyProbe(event.request)) {
+      const report = formatLatencyReport({
+        ...(event.admittedAt === undefined ? {} : { admittedAt: event.admittedAt }),
+        now: Date.now(),
+        ...(event.occurredAt === undefined ? {} : { occurredAt: event.occurredAt }),
+        recentTurnDurations: this.dependencies.journal.recentTurnDurations(),
+      });
+      this.dependencies.journal.accept(
+        event.providerGuid,
+        lease,
+        { reply: report },
+        { memoryEligible: false },
+      );
+      try {
+        await this.#deliver(event, lease, report);
+      } catch {
+        const state = this.dependencies.journal.state(event.providerGuid);
+        if (state === "sending") this.dependencies.journal.markAmbiguous(event.providerGuid, lease);
+        else if (state === "ready_to_send") {
+          this.dependencies.journal.markFailed(event.providerGuid, lease);
+        }
       }
       return;
     }
@@ -395,11 +423,15 @@ export class TurnCoordinator {
   }
 
   admit(request: ActivatedRequest): "accepted" | "duplicate" | "rate-limited" {
+    const occurredAt = request.occurredAt === null
+      ? Number.NaN
+      : Date.parse(request.occurredAt);
     const result = this.journal.admit({
       activationTag: request.activationTag,
       chatId: request.chatId,
       chatKey: chatKeyForId(request.chatId, this.chatKeySalt),
       conversation: request.conversation,
+      ...(Number.isFinite(occurredAt) ? { occurredAt } : {}),
       providerGuid: request.providerGuid,
       request: request.request,
     });

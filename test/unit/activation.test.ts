@@ -56,6 +56,7 @@ describe("activation", () => {
       chatId: 42,
       conversation: event().conversation,
       isFromMe: false,
+      occurredAt: "2026-09-01T12:00:00.000Z",
       providerGuid: "message-guid",
       request: "summarize this",
       rowId: 101,
