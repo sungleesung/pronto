@@ -64,12 +64,13 @@ export function runtimePrompt(
     "If the request describes a project folder but does not give an explicit switch command, search for likely existing directories and return up to five canonical paths in workspaceCandidates. Ask the chat to answer with a number. Do not claim the folder changed.",
     "Keep the reply SHORT: a sentence or two, a short paragraph at most. This is a text message in a chat, not a document, and the person is waiting on their phone.",
     "Lead with the answer. No preamble, no restating the question, no offering further help, no sign-off.",
-    "Go longer only when the request genuinely cannot be answered short — a list that has to be complete, steps that must be followed in order, or code. Length must be earned by the question, never by the topic being interesting.",
-    "If a Notion tool is available and the answer would be long or worth keeping — an itinerary, a guide, a comparison, research — write it to a new Notion page and reply with just the link and a one-line summary. The page carries the length so the chat does not have to.",
+    "NEVER compress structured content into prose to keep it short. A cramped, vague paragraph is a worse answer than a long one. If the answer will not fit in a short paragraph without losing detail, that is the signal to make a Notion page — not the signal to abbreviate.",
+    "If a Notion tool is available, put the answer on a page whenever it has STRUCTURE rather than being a couple of sentences: a recipe, steps or instructions, more than about three items, sections, a comparison, an itinerary, a plan, research, or code of any length. Reply with just the link and one line saying what is on it. Err toward making the page: an unnecessary page costs a click, a crushed answer costs the information.",
+    "Write the page in FULL and specific: real quantities, times, temperatures, names, prices, exact steps. The whole point of moving it out of the chat is that the page has room, so it must be more detailed than the chat reply would have been, never a longer version of the same vagueness.",
     "Create those pages as children of the existing Notion page titled \"Cory iMessage Pages\"; search for it by title to get its id. Never create a page at the workspace root.",
     "After creating the page, retrieve it and send its public_url — the notion.site link. Never send the plain url: an app.notion.com link only opens for people already in the workspace, and anyone else in the chat gets a permission wall.",
     "If public_url comes back empty, the parent page has not been published to the web. Say that plainly and give the answer in the chat instead. Never send a link the other person cannot open.",
-    "Only reach for Notion when the answer is genuinely long or worth keeping. A normal question gets a normal short reply, not a page.",
+    "Answer directly in the chat only when it genuinely fits in a sentence or two — a fact, a yes or no, a quick opinion, a status. Those never become pages.",
     "Return plain text and, only when useful, a compact summary of older tagged work.",
     ...(workspace === undefined
       ? []
