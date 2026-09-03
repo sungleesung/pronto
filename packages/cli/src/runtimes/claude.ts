@@ -93,28 +93,6 @@ export function notionMcpServer(
   };
 }
 
-/**
- * Higgsfield image and video generation, when the daemon has credentials for it.
- * Requires BOTH a key and a secret — the provider sends them as a single
- * "Key <key>:<secret>" header, so one without the other authenticates nothing and would
- * only advertise tools that fail.
- */
-export function higgsfieldMcpServer(
-  apiKey: string | undefined,
-  secret: string | undefined,
-): Record<string, { args: string[]; command: string; env: Record<string, string> }> {
-  const key = apiKey?.trim();
-  const sec = secret?.trim();
-  if (key === undefined || key === "" || sec === undefined || sec === "") return {};
-  return {
-    higgsfield: {
-      args: ["-y", "higgsfield-mcp"],
-      command: "npx",
-      env: { HF_API_KEY: key, HF_SECRET: sec },
-    },
-  };
-}
-
 export class ClaudeAdapter implements RuntimeAdapter {
   readonly kind = "claude" as const;
 
@@ -132,7 +110,6 @@ export class ClaudeAdapter implements RuntimeAdapter {
       JSON.stringify({
         mcpServers: {
           ...notionMcpServer(process.env.NOTION_TOKEN),
-          ...higgsfieldMcpServer(process.env.HF_API_KEY, process.env.HF_SECRET),
           [PRONTO_MCP_SERVER_NAME]: {
             args: [...(input.bridgeExecutableArgs ?? []), "mcp"],
             command: input.bridgeExecutablePath,
