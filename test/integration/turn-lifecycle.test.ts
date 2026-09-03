@@ -218,6 +218,10 @@ describe("turn lifecycle", () => {
       // Nothing to fold into, but it still reads as an amendment rather than a new question.
       expect(primary.inputs[0]!.prompt).toContain("REVISION of the request");
       expect(primary.inputs[0]!.prompt).toContain("make it vegetarian");
+      // The heading echoes the person's words, never the scaffolding around them.
+      // The heading echoes exactly what was typed, with no scaffolding in it.
+      expect(h.transport.sends[0]!.text).toContain("re: \u201cbtw make it vegetarian\u201d");
+      expect(h.transport.sends[0]!.text).not.toContain("REVISION");
       expect(h.transport.sends).toHaveLength(1);
     } finally {
       h.close();

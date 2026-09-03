@@ -175,6 +175,22 @@ export interface TurnTransport {
   ): Promise<SendDisposition>;
 }
 
+/**
+ * What the runtime is asked, which is not always what was stored. A "btw ..." that had no
+ * pending request to fold into is kept verbatim so the reply heading echoes the person's
+ * own words; the framing that makes it read as an amendment is added only here.
+ */
+export function requestForRuntime(request: string): string {
+  if (!isAmendment(request)) return request;
+  const revision = amendmentBody(request);
+  if (revision === "") return request;
+  return [
+    revision,
+    "",
+    "(The line above is a REVISION of the request this person just made. Find that request in the recent conversation and answer the revised version of it, not this line on its own. Do not repeat the earlier answer unchanged.)",
+  ].join("\n");
+}
+
 export class TurnProcessor {
   constructor(
     readonly dependencies: {
@@ -278,7 +294,7 @@ export class TurnProcessor {
       }
       const memory = this.dependencies.memory.get(event.chatKey);
       const context = assembleContext({
-        currentRequest: event.request,
+        currentRequest: requestForRuntime(event.request),
         exactExchanges: memory.exchanges,
         recentMessages: recentContext(
           await this.dependencies.transport.recentMessages(event.chatId, 30, event.conversation),
@@ -507,15 +523,10 @@ export class TurnCoordinator {
           `REVISION from the same person, replacing or adjusting the request above: ${revision}`,
           "Answer the revised request once. Do not answer the original separately.",
         ].join("\n");
-      } else if (revision !== "") {
-        // Too late to fold — the earlier turn is already running or answered. Still treat
-        // it as a revision so the aside amends what was just asked instead of being read
-        // as a new question on its own.
-        text = [
-          `REVISION of the request this person just made: ${revision}`,
-          "Find that request in the recent conversation and answer the revised version of it, not this line on its own. Do not repeat the earlier answer unchanged.",
-        ].join("\n");
       }
+      // Nothing pending to fold into: the text is stored exactly as the person typed it.
+      // The revision framing is added when the prompt is built, not here — this string is
+      // echoed back in the reply heading, and scaffolding would show up in the chat.
     }
 
     const result = this.journal.admit({
