@@ -131,7 +131,11 @@ const activation: ActivatedRequest = {
   rowId: 1,
 };
 
-async function harness(primary: RuntimeAdapter, fallback?: RuntimeAdapter) {
+async function harness(
+  primary: RuntimeAdapter,
+  fallback?: RuntimeAdapter,
+  maxConcurrentTurns?: number,
+) {
   const directory = await mkdtemp(join(tmpdir(), "pronto-turn-"));
   temporaryDirectories.push(directory);
   const database = openProntoDatabase(join(directory, "state.sqlite"));
@@ -152,7 +156,9 @@ async function harness(primary: RuntimeAdapter, fallback?: RuntimeAdapter) {
     workspaces,
   });
   const salt = "private-installation-salt";
-  const coordinator = new TurnCoordinator(processor, journal, salt);
+  const coordinator = maxConcurrentTurns === undefined
+    ? new TurnCoordinator(processor, journal, salt)
+    : new TurnCoordinator(processor, journal, salt, maxConcurrentTurns);
   return {
     close: () => database.close(),
     coordinator,
@@ -167,6 +173,48 @@ async function harness(primary: RuntimeAdapter, fallback?: RuntimeAdapter) {
 }
 
 describe("turn lifecycle", () => {
+  test("runs turns from different chats at the same time", async () => {
+    const primary = new OrderedAdapter();
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({ ...activation, providerGuid: "IN-CHAT-A", request: "first request" });
+      h.coordinator.admit({
+        ...activation,
+        chatId: 7,
+        conversation: { ...activation.conversation, chatId: 7 },
+        providerGuid: "IN-CHAT-B",
+        request: "second request",
+      });
+      await h.coordinator.idle();
+      // Two conversations, so neither waits on the other.
+      expect(primary.maxActive).toBe(2);
+      expect(primary.requests.sort()).toEqual(["first", "second"]);
+    } finally {
+      h.close();
+    }
+  });
+
+  test("never exceeds the configured turn concurrency", async () => {
+    const primary = new OrderedAdapter();
+    const h = await harness(primary, undefined, 2);
+    try {
+      for (const [index, chatId] of [11, 12, 13, 14].entries()) {
+        h.coordinator.admit({
+          ...activation,
+          chatId,
+          conversation: { ...activation.conversation, chatId },
+          providerGuid: `IN-CAP-${index}`,
+          request: index % 2 === 0 ? "first request" : "second request",
+        });
+      }
+      await h.coordinator.idle();
+      expect(primary.maxActive).toBeLessThanOrEqual(2);
+      expect(primary.requests).toHaveLength(4);
+    } finally {
+      h.close();
+    }
+  });
+
   test("acknowledges a real turn with a tapback, but not the latency probe", async () => {
     const primary = new FakeAdapter("codex", {
       output: { reply: "Done." },

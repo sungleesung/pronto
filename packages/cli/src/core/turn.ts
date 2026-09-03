@@ -450,11 +450,20 @@ export class TurnProcessor {
 
 export class TurnCoordinator {
   #draining: Promise<void> | null = null;
+  /** Resolves a parked drain when new work is admitted. */
+  #wake: (() => void) | null = null;
 
   constructor(
     readonly processor: TurnProcessor,
     readonly journal: DeliveryJournal,
     readonly chatKeySalt: string,
+    /**
+     * Turns from different conversations run together. One at a time meant a second
+     * person tagging the agent waited out the first person's entire turn, which is tens
+     * of seconds. Turns within a single conversation stay serial so replies keep their
+     * order.
+     */
+    readonly maxConcurrentTurns: number = 3,
   ) {}
 
   start(): { ambiguous: number; parked: number; resumed: number } {
@@ -485,7 +494,15 @@ export class TurnCoordinator {
   }
 
   #schedule(): void {
-    if (this.#draining !== null) return;
+    if (this.#draining !== null) {
+      // A drain is already running, but it may be parked waiting for a turn to finish.
+      // Without this nudge, work admitted while it waits sits until something else
+      // completes, which is exactly the burst case: two messages arriving together.
+      const wake = this.#wake;
+      this.#wake = null;
+      wake?.();
+      return;
+    }
     this.#draining = this.#drain().finally(() => {
       this.#draining = null;
       if (this.journal.nextRunnable() !== null) this.#schedule();
@@ -493,10 +510,58 @@ export class TurnCoordinator {
   }
 
   async #drain(): Promise<void> {
+    const busyChats = new Set<string>();
+    const running = new Map<number, Promise<void>>();
+    let sequence = 0;
+    let failure: unknown;
+
+    // Wait for either a turn to finish or fresh work to arrive. Tasks never reject:
+    // each one captures its own failure below, so racing them yields the next free slot
+    // rather than tearing down the whole drain.
+    const settle = async (): Promise<void> => {
+      if (running.size === 0) return;
+      let onWake!: () => void;
+      const woken = new Promise<void>((resolve) => {
+        onWake = resolve;
+      });
+      this.#wake = onWake;
+      try {
+        await Promise.race([...running.values(), woken]);
+      } finally {
+        this.#wake = null;
+      }
+    };
+
     while (true) {
-      const event = this.journal.nextRunnable();
-      if (event === null) return;
-      await this.processor.process(event);
+      if (running.size >= this.maxConcurrentTurns) {
+        await settle();
+        continue;
+      }
+      const event = this.journal.nextRunnable([...busyChats]);
+      if (event === null) {
+        if (running.size === 0) {
+          if (failure !== undefined) throw failure;
+          return;
+        }
+        await settle();
+        continue;
+      }
+      const chatKey = event.chatKey;
+      const id = sequence;
+      sequence += 1;
+      busyChats.add(chatKey);
+      const task = Promise.resolve()
+        .then(async () => await this.processor.process(event))
+        .catch((error: unknown) => {
+          // Keep the first failure and let the remaining turns finish; one bad turn
+          // should not strand the others mid-flight.
+          failure ??= error;
+        })
+        .finally(() => {
+          busyChats.delete(chatKey);
+          running.delete(id);
+        });
+      running.set(id, task);
     }
   }
 }

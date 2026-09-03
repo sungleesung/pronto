@@ -144,7 +144,15 @@ export class DeliveryJournal {
     return result.changes === 1 ? token : null;
   }
 
-  nextRunnable(): QueuedEvent | null {
+  /**
+   * The oldest runnable event, skipping chats that already have a turn in flight.
+   * Excluding by chat is what lets turns overlap across conversations while replies
+   * within one conversation stay in order.
+   */
+  nextRunnable(busyChatKeys: readonly string[] = []): QueuedEvent | null {
+    const exclusion = busyChatKeys.length === 0
+      ? ""
+      : ` AND chat_key NOT IN (${busyChatKeys.map(() => "?").join(", ")})`;
     const row = this.database
       .query(
         `SELECT provider_guid, chat_key, chat_id, conversation_reference, activation_tag,
@@ -152,10 +160,11 @@ export class DeliveryJournal {
                 attachment_path
          FROM delivery_events
          WHERE state IN ('admitted', 'ready_to_send') AND tagged_request IS NOT NULL
+               ${exclusion}
          ORDER BY created_at ASC, rowid ASC
          LIMIT 1`,
       )
-      .get() as
+      .get(...busyChatKeys) as
       | {
           chat_id: number;
           chat_key: string;
@@ -548,13 +557,18 @@ export class DeliveryJournal {
         )
         .get(fingerprint, this.now()) as { provider_guid: string } | null;
       if (row === null) return false;
+      // Seeing our own message come back is proof it was delivered. A send whose
+      // provider response carried no guid was recorded 'ambiguous' — that is a
+      // bookkeeping gap, not a lost message, and this is the evidence that closes it.
       this.database
         .query(
           `UPDATE delivery_events
-           SET outbound_fingerprint = NULL, outbound_fingerprint_expires_at = NULL
+           SET outbound_fingerprint = NULL, outbound_fingerprint_expires_at = NULL,
+               state = CASE WHEN state = 'ambiguous' THEN 'delivered' ELSE state END,
+               updated_at = CASE WHEN state = 'ambiguous' THEN ? ELSE updated_at END
            WHERE provider_guid = ?`,
         )
-        .run(row.provider_guid);
+        .run(this.now(), row.provider_guid);
       return true;
     })();
   }
