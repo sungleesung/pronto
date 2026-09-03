@@ -5,13 +5,13 @@ import { acknowledgementText, formatImessageReplyText, imessageReplyBodyCharacte
 describe("iMessage reply formatting", () => {
   test("puts the triggering tag in title case on its own first line", () => {
     expect(formatImessageReplyText("@research", "I found the launch notes.")).toBe(
-      "Research\nI found the launch notes.",
+      "Research\n\nI found the launch notes.",
     );
   });
 
   test("preserves the rest of the tag spelling and punctuation", () => {
     expect(formatImessageReplyText("@studio_four-4", "Done.")).toBe(
-      "Studio_four-4\nDone.",
+      "Studio_four-4\n\nDone.",
     );
   });
 

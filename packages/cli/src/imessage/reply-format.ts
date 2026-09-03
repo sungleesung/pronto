@@ -3,8 +3,9 @@ import { plainTextFromMarkdown } from "./plain-text";
 
 /**
  * The Messages bridge sends plain text. The reply opens with three stacked lines:
- * the tag's own name, the echoed request, then the answer. Separate lines rather than
- * one run-on heading, so the eye can skip the first two and land on the reply.
+ * the tag's own name, the echoed request, a blank line, then the answer. Separate lines
+ * rather than one run-on heading, and the blank line so the reply itself reads as its own
+ * block instead of running on from the attribution.
  */
 export function formatImessageReplyText(
   activationTag: string,
@@ -13,7 +14,7 @@ export function formatImessageReplyText(
 ): string {
   const heading = replyHeading(activationTag, request);
   const body = plainTextFromMarkdown(replyText);
-  return body === "" ? heading : `${heading}\n${body}`;
+  return body === "" ? heading : `${heading}\n\n${body}`;
 }
 
 /**
@@ -30,7 +31,7 @@ export function imessageReplyBodyCharacterLimit(
   totalCharacterLimit: number,
   request?: string,
 ): number {
-  return Math.max(0, totalCharacterLimit - replyHeading(activationTag, request).length - 1);
+  return Math.max(0, totalCharacterLimit - replyHeading(activationTag, request).length - 2);
 }
 
 const REQUEST_ECHO_CHARACTER_LIMIT = 40;
