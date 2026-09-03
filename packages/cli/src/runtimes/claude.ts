@@ -112,8 +112,6 @@ export class ClaudeAdapter implements RuntimeAdapter {
           "--model",
           "claude-haiku-4-5-20251001",
           "--strict-mcp-config",
-          "--setting-sources",
-          "project",
           "--json-schema",
           JSON.stringify(RUNTIME_OUTPUT_SCHEMA),
           "--mcp-config",

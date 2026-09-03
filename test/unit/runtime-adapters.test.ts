@@ -153,7 +153,6 @@ describe("Claude Code adapter", () => {
     expect(execution.args).toContain("--model");
     expect(execution.args).toContain("claude-haiku-4-5-20251001");
     expect(execution.args).toContain("--strict-mcp-config");
-    expect(execution.args).toContain("--setting-sources");
     expect(execution.args).not.toContain("--permission-mode");
     expect(execution.args).toContain("--dangerously-skip-permissions");
     expect(execution.args.join(" ")).not.toContain("secret-capability");
