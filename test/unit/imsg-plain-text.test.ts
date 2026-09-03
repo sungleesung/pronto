@@ -64,3 +64,39 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown(report)).toBe(report);
   });
 });
+
+describe("code is never touched by the emphasis rules", () => {
+  test("keeps asterisks inside a fenced block, including Python varargs", () => {
+    expect(plainTextFromMarkdown("```py\ndef f(*args, **kwargs):\n    return a*b*c\n```"))
+      .toBe("def f(*args, **kwargs):\n    return a*b*c");
+  });
+
+  test("keeps asterisks inside an inline code span", () => {
+    expect(plainTextFromMarkdown("`2*3*4`")).toBe("2*3*4");
+    expect(plainTextFromMarkdown("use `a*b*c` here")).toBe("use a*b*c here");
+  });
+
+  test("keeps a shell glob inside a fence", () => {
+    expect(plainTextFromMarkdown("```\nrm -rf build/*.o *.a\n```"))
+      .toBe("rm -rf build/*.o *.a");
+  });
+
+  test("keeps dunder names inside code", () => {
+    expect(plainTextFromMarkdown("`__init__`")).toBe("__init__");
+  });
+});
+
+describe("emphasis needs a word boundary", () => {
+  test("does not eat chained asterisks in prose", () => {
+    expect(plainTextFromMarkdown("the value is 2*3*4 exactly"))
+      .toBe("the value is 2*3*4 exactly");
+    expect(plainTextFromMarkdown("a*b*c")).toBe("a*b*c");
+  });
+
+  test("still flattens real emphasis at a boundary", () => {
+    expect(plainTextFromMarkdown("*italic*")).toBe("italic");
+    expect(plainTextFromMarkdown("a *word* here")).toBe("a word here");
+    expect(plainTextFromMarkdown("(*parenthesised*)")).toBe("(parenthesised)");
+    expect(plainTextFromMarkdown("*one* and *two*")).toBe("one and two");
+  });
+});

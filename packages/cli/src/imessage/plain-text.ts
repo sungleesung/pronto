@@ -10,18 +10,38 @@
  * markers are removed.
  */
 
-/** Fenced blocks first, so markers inside them are never treated as emphasis. */
-function stripFences(value: string): string {
-  return value.replace(/```[^\n`]*\n?([\s\S]*?)```/gu, (_match, body: string) =>
-    body.replace(/\n$/u, ""),
+// Code is lifted out before anything else runs and put back untouched at the end.
+// Stripping the fence or the backticks first would leave the code exposed to the
+// emphasis rules below, and "def f(*args, **kwargs)" would come out as
+// "def f(args, *kwargs)" — silently corrupted rather than merely unformatted.
+const PLACEHOLDER = "\u0000";
+
+function liftCode(value: string): { readonly bodies: string[]; readonly text: string } {
+  const bodies: string[] = [];
+  const hold = (body: string): string => {
+    bodies.push(body);
+    return `${PLACEHOLDER}${bodies.length - 1}${PLACEHOLDER}`;
+  };
+  const withoutFences = value.replace(
+    /```[^\n`]*\n?([\s\S]*?)```/gu,
+    (_match, body: string) => hold(body.replace(/\n$/u, "")),
+  );
+  return {
+    bodies,
+    text: withoutFences.replace(/`([^`\n]+)`/gu, (_match, body: string) => hold(body)),
+  };
+}
+
+function restoreCode(value: string, bodies: readonly string[]): string {
+  return value.replace(
+    new RegExp(`${PLACEHOLDER}(\\d+)${PLACEHOLDER}`, "gu"),
+    (match, index: string) => bodies[Number(index)] ?? match,
   );
 }
 
 export function plainTextFromMarkdown(value: string): string {
-  let text = stripFences(value);
-
-  // `code` -> code. Backticks never carry meaning in a chat bubble.
-  text = text.replace(/`([^`\n]+)`/gu, "$1");
+  const lifted = liftCode(value);
+  let text = lifted.text;
 
   // ![alt](url) -> alt, before links so the leading "!" cannot survive.
   text = text.replace(/!\[([^\]\n]*)\]\([^)\s]*(?:\s+"[^"]*")?\)/gu, "$1");
@@ -40,8 +60,12 @@ export function plainTextFromMarkdown(value: string): string {
   text = text.replace(/__(\S(?:[^_]*\S)?)__/gu, "$1");
   text = text.replace(/~~(\S(?:[^~]*\S)?)~~/gu, "$1");
 
-  // Single-asterisk emphasis only when the markers hug the text: "2 * 3" is untouched.
-  text = text.replace(/\*(\S(?:[^*\n]*\S)?)\*/gu, "$1");
+  // Single-asterisk emphasis, and only at a word boundary. Markers hugging the text is
+  // not enough on its own: "2*3*4" would otherwise collapse to "234".
+  text = text.replace(
+    /(^|[^\p{L}\p{N}_*])\*(\S(?:[^*\n]*\S)?)\*(?![\p{L}\p{N}_])/gmu,
+    "$1$2",
+  );
   // Single-underscore emphasis is NOT stripped: snake_case would lose its underscores.
 
   // Leading block markers, per line.
@@ -49,5 +73,5 @@ export function plainTextFromMarkdown(value: string): string {
   text = text.replace(/^[^\S\n]*>[^\S\n]?/gmu, "");
   text = text.replace(/^([^\S\n]*)[-*+][^\S\n]+/gmu, "$1• ");
 
-  return text;
+  return restoreCode(text, lifted.bodies);
 }

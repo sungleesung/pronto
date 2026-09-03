@@ -437,6 +437,10 @@ export class TurnProcessor {
           part,
           event.conversation,
         );
+        // KNOWN GAP: only the first bubble is journalled, so a continuation that fails
+        // leaves the chat with a truncated reply while the delivery still records as
+        // whatever the first bubble returned. Retrying the whole reply would duplicate
+        // the part that did arrive, so this is accepted rather than papered over.
         if (continuation.disposition === "failed") break;
       }
     }
