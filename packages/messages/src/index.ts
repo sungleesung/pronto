@@ -7,6 +7,10 @@ import {
 import { createHash } from "node:crypto";
 import { isAbsolute } from "node:path";
 import {
+  ownerHandlesFromAccountListing,
+  selfChatMirrorPossible,
+} from "./internal/owner.js";
+import {
   databasePath,
   normalizeConversationFacts,
   normalizeEvent,
@@ -121,6 +125,8 @@ function isGenerationBoundary(error: unknown): error is RecoveryBoundaryError {
 }
 
 class ProntoMessagesClient implements ProntoMessages {
+  readonly #imsgPath: string;
+  #ownerHandles: Promise<ReadonlySet<string>> | null = null;
   readonly #rpc: ResilientRpcClient;
   readonly #scoped: ScopedMessagesAccess;
   readonly #recentOutgoing = new Map<string, MessagesEvent>();
@@ -153,6 +159,7 @@ class ProntoMessagesClient implements ProntoMessages {
           ? {}
           : { legacyUnscopedCursor: input.legacyUnscopedCursor }),
       });
+    this.#imsgPath = input.imsgPath;
     this.#rpc = ResilientRpcClient.spawn(input.imsgPath);
     this.#scoped = new ScopedMessagesAccess({
       ...(input.attachmentsRoot === undefined ? {} : { attachmentsRoot: input.attachmentsRoot }),
@@ -860,6 +867,36 @@ class ProntoMessagesClient implements ProntoMessages {
     }
   }
 
+  /**
+   * Every handle that belongs to the account owner, so we can tell a conversation with
+   * someone else from one the owner is having with themselves.
+   *
+   * Per-chat routing cannot answer this: `account_login` is the same address on every
+   * chat (an email here) while a self-chat's participant may be a different handle of
+   * the owner's (a phone number). Only the account listing has both. Resolved once and
+   * cached; an empty set means "unknown", which disables the optimisation rather than
+   * guessing.
+   */
+  async #knownOwnerHandles(): Promise<ReadonlySet<string>> {
+    this.#ownerHandles ??= (async () => {
+      try {
+        const child = Bun.spawn([this.#imsgPath, "account", "--local", "--json"], {
+          stderr: "ignore",
+          stdout: "pipe",
+        });
+        const [stdout, exitCode] = await Promise.all([
+          new Response(child.stdout).text(),
+          child.exited,
+        ]);
+        if (exitCode !== 0) return new Set<string>();
+        return ownerHandlesFromAccountListing(JSON.parse(stdout));
+      } catch {
+        return new Set<string>();
+      }
+    })();
+    return await this.#ownerHandles;
+  }
+
   async #isSelfChatMirror(
     event: MessagesEvent,
     budget?: RecoveryBudget,
@@ -871,6 +908,13 @@ class ProntoMessagesClient implements ProntoMessages {
     const hasReplyLink =
       event.message.replyToProviderMessageId !== null &&
       event.message.replyToText === event.message.text;
+    // A mirror is a duplicate of the owner's OWN message, so it can only occur in a
+    // conversation the owner is having with themselves. Everywhere else the scan below
+    // can only ever come back empty, and it is a 100-row provider round trip on the
+    // single serial event queue. Skip it when we can prove the participants are somebody
+    // else. Unknown owner handles or missing routing fall through to the scan.
+    const participants = event.conversationFacts.routing?.participants;
+    if (!selfChatMirrorPossible(participants, await this.#knownOwnerHandles())) return false;
     try {
       const request = async () => await this.#rpc.request("messages.after", {
           attachments: false,
