@@ -13,6 +13,7 @@ import {
   type ProntoConfig,
   UNRESTRICTED_TRUST_VERSION,
 } from "../config";
+import type { AccessPolicy } from "../access";
 import {
   installLaunchAgent,
   launchAgentStateForLabel,
@@ -508,6 +509,7 @@ export function discoverCommands(lookup: CommandLookup = (command) => Bun.which(
 }
 
 export function prepareSetupConfig(input: {
+  access?: AccessPolicy;
   chatKeySalt?: string;
   discovery: CommandDiscovery;
   fallbackRuntime?: RuntimeKind;
@@ -531,6 +533,7 @@ export function prepareSetupConfig(input: {
   }
 
   return createConfig({
+    ...(input.access === undefined ? {} : { access: input.access }),
     ...(input.fallbackRuntime === undefined
       ? {}
       : { fallbackRuntime: input.fallbackRuntime, fallbackRuntimePath: fallbackRuntimePath! }),

@@ -2,6 +2,7 @@
 
 import packageJson from "../package.json" with { type: "json" };
 import { createInterface } from "node:readline/promises";
+import { parseSetupOptions } from "./setup-options";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { stdin, stdout } from "node:process";
@@ -66,7 +67,7 @@ Options:
   -h, --help     Show this help
   -v, --version  Show the installed version`;
 
-async function runSetup(): Promise<number> {
+async function runSetup(argv: readonly string[] = []): Promise<number> {
   if (process.platform !== "darwin") {
     console.error("Pronto setup requires macOS.");
     return 1;
@@ -81,6 +82,14 @@ async function runSetup(): Promise<number> {
     return 1;
   }
 
+  let options;
+  try {
+    options = parseSetupOptions(argv);
+  } catch (error) {
+    console.error((error as Error).message);
+    return 1;
+  }
+
   const prompt = createInterface({ input: stdin, output: stdout });
   try {
     const paths = pathsForHome(homedir());
@@ -88,33 +97,41 @@ async function runSetup(): Promise<number> {
     const existing = await loadExistingSetupDefaults(paths.configPath) ??
       await loadExistingSetupDefaults(legacyPaths.configPath);
     const defaultTags = existing?.tags ?? ["@s4"];
-    const tagAnswer = (await prompt.question(
-      `Trigger tags, separated by commas [${defaultTags.join(", ")}]: `,
-    )).trim();
-    const tags = tagAnswer === ""
-      ? defaultTags
-      : normalizeTags(tagAnswer.split(",").map((tag) => tag.trim()));
-    const primaryAnswer =
-      available.length === 1
+    let tags: readonly string[];
+    if (options.tags !== undefined) {
+      tags = options.tags;
+    } else {
+      const tagAnswer = (await prompt.question(
+        `Trigger tags, separated by commas [${defaultTags.join(", ")}]: `,
+      )).trim();
+      tags = tagAnswer === ""
+        ? defaultTags
+        : normalizeTags(tagAnswer.split(",").map((tag) => tag.trim()));
+    }
+    const primaryAnswer = options.runtime ??
+      (available.length === 1
         ? available[0]!
         : ((await prompt.question(`Primary runtime [${available.join("/")}]: `))
             .trim()
-            .toLowerCase() as (typeof available)[number]);
+            .toLowerCase() as (typeof available)[number]));
     if (!available.includes(primaryAnswer)) throw new Error("Choose an installed runtime");
     const fallbackCandidate = available.find((runtime) => runtime !== primaryAnswer);
     const wantsFallback =
       fallbackCandidate === undefined
         ? false
-        : (await prompt.question(`Use ${fallbackCandidate} as fallback? [y/N]: `))
+        : options.fallback ??
+          (await prompt.question(`Use ${fallbackCandidate} as fallback? [y/N]: `))
             .trim()
             .toLowerCase() === "y";
 
     const defaultWorkspace = existing?.workingDirectory ?? join(homedir(), "pronto");
     let workspacePrompt = `Default working folder [${defaultWorkspace}]: `;
     let workspaceFallback = defaultWorkspace;
+    let preAnswered = options.workingDirectory;
     let selection;
     while (true) {
-      const enteredPath = (await prompt.question(workspacePrompt)).trim();
+      const enteredPath = preAnswered ?? (await prompt.question(workspacePrompt)).trim();
+      preAnswered = undefined;
       if (enteredPath === "" && workspaceFallback === "") {
         console.error("Enter a working folder path.");
         continue;
@@ -129,6 +146,8 @@ async function runSetup(): Promise<number> {
         continue;
       }
       if (!selection.exists) break;
+      // An installer that already asked for the folder means to use it, existing or not.
+      if (options.workingDirectory !== undefined) break;
       const reuse = (await prompt.question(`Reuse existing folder ${selection.path}? [Y/n]: `))
         .trim()
         .toLowerCase();
@@ -138,9 +157,9 @@ async function runSetup(): Promise<number> {
     }
 
     console.log(`\n${TRUST_DISCLOSURE}\n`);
-    const confirmed = (await prompt.question("Type yes to accept this trust model: "))
-      .trim()
-      .toLowerCase();
+    const confirmed = options.acceptTrust
+      ? "yes"
+      : (await prompt.question("Type yes to accept this trust model: ")).trim().toLowerCase();
     if (confirmed !== "yes") {
       console.error("Setup cancelled without changing the service.");
       return 1;
@@ -155,6 +174,7 @@ async function runSetup(): Promise<number> {
       ...(wantsFallback && fallbackCandidate !== undefined
         ? { fallbackRuntime: fallbackCandidate }
         : {}),
+      ...(options.access === undefined ? {} : { access: options.access }),
       primaryRuntime: primaryAnswer,
       tags,
       workingDirectory,
@@ -473,7 +493,7 @@ export async function runCli(args: readonly string[]): Promise<number> {
     return 0;
   }
 
-  if (command === "setup") return runSetup();
+  if (command === "setup") return runSetup(args.slice(1));
   if (command === "mcp") {
     const brokerUrl = process.env[PRONTO_BROKER_URL_ENV];
     const capability = process.env[PRONTO_ATTEMPT_CAPABILITY_ENV];
