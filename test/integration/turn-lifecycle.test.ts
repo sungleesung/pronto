@@ -371,7 +371,7 @@ describe("turn lifecycle", () => {
         request: "find it again",
       });
       await h.coordinator.idle();
-      expect(h.transport.sends[1]!.text).toBe("Helper\nNo valid projects.");
+      expect(h.transport.sends[1]!.text).toBe("Helper \u00b7 re: \u201cfind it again\u201d\nNo valid projects.");
       expect(h.workspaces.get(chatKeyForId(42, h.salt)).pendingCandidates).toEqual([]);
     } finally {
       h.close();
@@ -505,7 +505,9 @@ describe("turn lifecycle", () => {
       expect(h.coordinator.admit(activation)).toBe("duplicate");
       await h.coordinator.idle();
 
-      expect(h.transport.sends).toEqual([{ chatId: 42, text: "Helper\nLaunch note ready." }]);
+      expect(h.transport.sends).toEqual([
+        { chatId: 42, text: "Helper \u00b7 re: \u201cDraft the launch note.\u201d\nLaunch note ready." },
+      ]);
       expect(h.journal.state("IN-1")).toBe("delivered");
       expect(h.memory.get(chatKeyForId(42, h.salt))).toEqual({
         exchanges: [{ reply: "Launch note ready.", request: "Draft the launch note." }],
@@ -595,7 +597,9 @@ describe("turn lifecycle", () => {
     try {
       h.coordinator.admit(activation);
       await h.coordinator.idle();
-      expect(h.transport.sends).toEqual([{ chatId: 42, text: `Helper\n${FAILURE_NOTICE}` }]);
+      expect(h.transport.sends).toEqual([
+        { chatId: 42, text: `Helper \u00b7 re: \u201cDraft the launch note.\u201d\n${FAILURE_NOTICE}` },
+      ]);
       expect(h.memory.get(chatKeyForId(42, h.salt)).exchanges).toEqual([]);
     } finally {
       h.close();
@@ -612,7 +616,9 @@ describe("turn lifecycle", () => {
     try {
       h.coordinator.admit(activation);
       await h.coordinator.idle();
-      expect(h.transport.sends).toEqual([{ chatId: 42, text: `Helper\n${FAILURE_NOTICE}` }]);
+      expect(h.transport.sends).toEqual([
+        { chatId: 42, text: `Helper \u00b7 re: \u201cDraft the launch note.\u201d\n${FAILURE_NOTICE}` },
+      ]);
       expect(h.journal.state("IN-1")).toBe("delivered");
     } finally {
       h.close();
@@ -647,8 +653,8 @@ describe("turn lifecycle", () => {
       expect(primary.requests).toEqual(["first", "second"]);
       expect(primary.maxActive).toBe(1);
       expect(h.transport.sends.map((send) => send.text)).toEqual([
-        "Helper\nfirst reply",
-        "Helper\nsecond reply",
+        "Helper \u00b7 re: \u201cfirst request\u201d\nfirst reply",
+        "Helper \u00b7 re: \u201csecond request\u201d\nsecond reply",
       ]);
     } finally {
       h.close();
@@ -678,7 +684,9 @@ describe("turn lifecycle", () => {
       await h.coordinator.idle();
 
       expect(primary.inputs).toHaveLength(0);
-      expect(h.transport.sends).toEqual([{ chatId: 42, text: "Plan\nalready accepted" }]);
+      expect(h.transport.sends).toEqual([
+        { chatId: 42, text: "Plan \u00b7 re: \u201crecover me\u201d\nalready accepted" },
+      ]);
       expect(h.journal.state("IN-RECOVER")).toBe("delivered");
     } finally {
       h.close();

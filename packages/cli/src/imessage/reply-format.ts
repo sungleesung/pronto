@@ -1,25 +1,53 @@
+import { findTagRanges } from "../activation";
+
 /**
  * The Messages bridge sends plain text. Put the triggering tag on its own line
  * in the native Messages typeface so replies from different tags are easy to
  * distinguish without exposing Markdown punctuation.
  */
-export function formatImessageReplyText(activationTag: string, replyText: string): string {
-  const heading = replyHeading(activationTag);
+export function formatImessageReplyText(
+  activationTag: string,
+  replyText: string,
+  request?: string,
+): string {
+  const heading = replyHeading(activationTag, request);
   return replyText === "" ? heading : `${heading}\n${replyText}`;
 }
 
 export function imessageReplyBodyCharacterLimit(
   activationTag: string,
   totalCharacterLimit: number,
+  request?: string,
 ): number {
-  return Math.max(0, totalCharacterLimit - replyHeading(activationTag).length - 1);
+  return Math.max(0, totalCharacterLimit - replyHeading(activationTag, request).length - 1);
 }
 
-function replyHeading(activationTag: string): string {
+const REQUEST_ECHO_CHARACTER_LIMIT = 40;
+
+function replyHeading(activationTag: string, request?: string): string {
   const displayName = activationTag.startsWith("@")
     ? activationTag.slice(1)
     : activationTag;
-  return titleCase(displayName);
+  const name = titleCase(displayName);
+  const echo = requestEcho(request, activationTag);
+  return echo === null ? name : `${name} \u00b7 re: ${echo}`;
+}
+
+// Echoes the triggering request so a reply stays legible in a fast-moving chat.
+// Any activation tag is removed first: the echo ships inside our own outbound
+// message, and leaving the tag intact would re-trigger the listener on itself.
+function requestEcho(request: string | undefined, activationTag: string): string | null {
+  if (request === undefined) return null;
+  let stripped = request;
+  for (const [start, end] of [...findTagRanges(request, activationTag)].reverse()) {
+    stripped = `${stripped.slice(0, start)}${stripped.slice(end)}`;
+  }
+  const collapsed = stripped.replace(/\s+/gu, " ").trim();
+  if (collapsed === "") return null;
+  const characters = [...collapsed];
+  return characters.length <= REQUEST_ECHO_CHARACTER_LIMIT
+    ? `\u201c${collapsed}\u201d`
+    : `\u201c${characters.slice(0, REQUEST_ECHO_CHARACTER_LIMIT).join("").trimEnd()}\u2026\u201d`;
 }
 
 function titleCase(value: string): string {

@@ -283,6 +283,7 @@ export class TurnProcessor {
             : imessageReplyBodyCharacterLimit(
                 event.activationTag,
                 MAX_RUNTIME_TEXT_CHARACTERS,
+                event.request,
               ),
         );
         const shouldUpdateCandidates =
@@ -361,7 +362,7 @@ export class TurnProcessor {
   async #deliver(event: QueuedEvent, lease: string, text: string): Promise<void> {
     const replyText = event.activationTag === undefined
       ? text
-      : formatImessageReplyText(event.activationTag, text);
+      : formatImessageReplyText(event.activationTag, text, event.request);
     this.dependencies.journal.beginSend(event.providerGuid, lease, event.chatId, replyText);
     const disposition = await this.dependencies.transport.sendText(
       event.chatId,
