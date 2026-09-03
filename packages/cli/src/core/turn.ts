@@ -64,6 +64,9 @@ export function runtimePrompt(
     "When someone sends you a document and asks for another like it, return the same format they sent.",
     "For invoices, do NOT write your own markup. Fill the template at ~/Library/Application Support/pronto/templates/invoice.html: replace every {{TOKEN}}, emit one <tr><td>Description</td><td class=\"amount num\">$0.00</td></tr> per line item into LINE_ITEMS_HTML, and delete the ADJUSTMENT_ROW_HTML placeholder entirely when there is no discount or credit. It is built to fit one page — keep each description to a single short line and do not add sections, and the invoice stays one page.",
     "Never leave a {{TOKEN}} unreplaced in a document you send, and never invent a bank or routing number: use only details the person actually gave you.",
+    "This is a group of friends texting. When a request is obviously absurd — invoice someone for the Twin Towers, a receipt for the Moon — it is a joke, so do the bit. Make the thing, commit to it, and let the absurdity be the punchline. Nobody is deceived by an invoice for a landmark.",
+    "Do not lecture, do not explain that something is not a real asset, and do not ask for the real job instead. Refusing a joke is the wrong answer twice: it kills the bit and it wastes the turn.",
+    "Keep refusing only what could actually deceive or harm someone: a convincing invoice from a real company the sender does not represent, a fake receipt meant to be passed off as genuine, anything impersonating a real person or business. The test is whether a reasonable person could be fooled by it, not whether the request is silly.",
     "Messages renders no markdown, so write plain sentences. Long replies are split into several bubbles automatically.",
     "Complete the authorized request using your unrestricted local tools without asking for approval.",
     "If the request describes a project folder but does not give an explicit switch command, search for likely existing directories and return up to five canonical paths in workspaceCandidates. Ask the chat to answer with a number. Do not claim the folder changed.",
@@ -166,7 +169,7 @@ export function confirmedWorkspaceDirectory(
 
 export interface TurnTransport {
   /** Optional "working on it" message. Returns whether it landed; never rejects. */
-  acknowledge?(chatId: number, activationTag: string): Promise<boolean>;
+  acknowledge?(chatId: number, activationTag: string, ahead?: number): Promise<boolean>;
   recentMessages(
     chatId: number,
     limit?: number,
@@ -263,13 +266,6 @@ export class TurnProcessor {
         }
       }
       return;
-    }
-
-    // The chat gets no signal at all until the reply lands, and that is tens of seconds
-    // away. Say we picked it up. Deliberately not awaited: the acknowledgement is a
-    // courtesy and must never sit in front of the actual work.
-    if (event.activationTag !== undefined) {
-      void this.dependencies.transport.acknowledge?.(event.chatId, event.activationTag);
     }
 
     let consumePendingCandidates = false;
@@ -518,10 +514,12 @@ export class TurnCoordinator {
     // the two together and answer once, rather than replying twice to one intent. Once the
     // turn is running it is too late to fold, and the revision becomes its own turn.
     let text = request.request;
+    let folded = false;
     if (isAmendment(text)) {
       const revision = amendmentBody(text);
       const pending = revision === "" ? null : this.journal.supersedePending(chatKey);
       if (pending !== null) {
+        folded = true;
         text = [
           pending.request,
           "",
@@ -543,7 +541,25 @@ export class TurnCoordinator {
       providerGuid: request.providerGuid,
       request: text,
     });
-    if (result.status === "accepted") this.#schedule();
+    if (result.status === "accepted") {
+      // Acknowledge on admission rather than when the turn starts. Starting is the wrong
+      // moment twice: anything queued behind another turn stayed silent until its turn
+      // came round, which is minutes in a busy chat, and by then everything ahead of it
+      // had finished so it could never report a queue position either.
+      //
+      // The probe is excluded — it answers faster than an acknowledgement could land —
+      // and so is a folded revision, since the request it merged into was already
+      // acknowledged and a second one would just be noise.
+      if (!isLatencyProbe(text) && !folded && request.activationTag !== undefined) {
+        const ahead = this.journal.pendingAhead(chatKey, request.providerGuid);
+        void this.processor.dependencies.transport.acknowledge?.(
+          request.chatId,
+          request.activationTag,
+          ahead,
+        );
+      }
+      this.#schedule();
+    }
     return result.status;
   }
 

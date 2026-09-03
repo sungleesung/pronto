@@ -88,8 +88,8 @@ class FakeTransport {
   }
   readonly acknowledged: Array<{ chatId: number; text: string }> = [];
 
-  async acknowledge(chatId: number, activationTag: string): Promise<boolean> {
-    this.acknowledged.push({ chatId, text: acknowledgementText(activationTag) });
+  async acknowledge(chatId: number, activationTag: string, ahead = 0): Promise<boolean> {
+    this.acknowledged.push({ chatId, text: acknowledgementText(activationTag, ahead) });
     return true;
   }
 
@@ -174,6 +174,23 @@ async function harness(
 }
 
 describe("turn lifecycle", () => {
+  test("a queued request is told how many are ahead of it", async () => {
+    const primary = new OrderedAdapter();
+    const h = await harness(primary);
+    try {
+      // Same chat, so they run one at a time and the second genuinely waits.
+      h.coordinator.admit({ ...activation, providerGuid: "IN-Q1", request: "first request" });
+      h.coordinator.admit({ ...activation, providerGuid: "IN-Q2", request: "second request" });
+      await h.coordinator.idle();
+      expect(h.transport.acknowledged.map((a) => a.text)).toEqual([
+        "Helper - Working on that now",
+        "Helper - Got it, finishing one before this",
+      ]);
+    } finally {
+      h.close();
+    }
+  });
+
   test("a btw folds into the request it revises and answers once", async () => {
     const primary = new FakeAdapter("codex", {
       output: { reply: "Vegetarian version ready." },

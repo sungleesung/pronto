@@ -33,13 +33,13 @@ export class ImsgTransport {
    * Tell the chat the request landed. Never throws and never blocks the turn: a missing
    * acknowledgement costs a nicety, while a thrown one would cost the reply.
    */
-  async acknowledge(chatId: number, activationTag: string): Promise<boolean> {
+  async acknowledge(chatId: number, activationTag: string, ahead = 0): Promise<boolean> {
     const conversation = this.#conversations.get(chatId)?.reference;
     if (conversation === undefined) return false;
     try {
       const outcome = await this.messages.reply({
         conversation,
-        text: acknowledgementText(activationTag),
+        text: acknowledgementText(activationTag, ahead),
       });
       return outcome.status !== "failed";
     } catch {

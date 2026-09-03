@@ -22,8 +22,12 @@ export function formatImessageReplyText(
  * nothing else in the chat says the message was seen, so this is the only signal
  * until the answer lands.
  */
-export function acknowledgementText(activationTag: string): string {
-  return `${displayName(activationTag)} - Working on that now`;
+export function acknowledgementText(activationTag: string, ahead = 0): string {
+  const name = displayName(activationTag);
+  if (ahead <= 0) return `${name} - Working on that now`;
+  return ahead === 1
+    ? `${name} - Got it, finishing one before this`
+    : `${name} - Got it, ${ahead} ahead of this one`;
 }
 
 export function imessageReplyBodyCharacterLimit(

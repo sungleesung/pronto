@@ -32,3 +32,10 @@ test("acknowledgement names the tag and says what is happening", () => {
   expect(acknowledgementText("cory")).toBe("Cory - Working on that now");
   expect(acknowledgementText("@helper")).toBe("Helper - Working on that now");
 });
+
+test("the acknowledgement says where a request sits in the queue", () => {
+  expect(acknowledgementText("@cory")).toBe("Cory - Working on that now");
+  expect(acknowledgementText("@cory", 0)).toBe("Cory - Working on that now");
+  expect(acknowledgementText("@cory", 1)).toBe("Cory - Got it, finishing one before this");
+  expect(acknowledgementText("@cory", 3)).toBe("Cory - Got it, 3 ahead of this one");
+});

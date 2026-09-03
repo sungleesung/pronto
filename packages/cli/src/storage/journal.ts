@@ -261,6 +261,23 @@ export class DeliveryJournal {
     })();
   }
 
+  /**
+   * How many turns for the same conversation are already in flight ahead of this one.
+   * Turns within a chat run one at a time so replies keep their order, which means a
+   * burst queues — and a queue nobody can see reads as the agent having stalled.
+   */
+  pendingAhead(chatKey: string, providerGuid: string): number {
+    const placeholders = ACTIVE_STATES.map(() => "?").join(", ");
+    const row = this.database
+      .query(
+        `SELECT COUNT(*) AS count FROM delivery_events
+         WHERE chat_key = ? AND provider_guid != ? AND state IN (${placeholders})
+           AND created_at <= (SELECT created_at FROM delivery_events WHERE provider_guid = ?)`,
+      )
+      .get(chatKey, providerGuid, ...ACTIVE_STATES, providerGuid) as { count: number } | null;
+    return row?.count ?? 0;
+  }
+
   cursor(): number | undefined {
     const row = this.database
       .query("SELECT value FROM service_state WHERE key = 'message_cursor'")
