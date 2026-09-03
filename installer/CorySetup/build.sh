@@ -37,6 +37,8 @@ swiftc -O -parse-as-library \
 for name in pronto imsg; do
   if [ -f "Resources/$name" ]; then
     cp "Resources/$name" "$APP/Contents/Resources/$name"
+    # 755, not the 700 an installed pronto carries: a package payload has to be readable
+    # by the installer and by whoever ends up running it.
     chmod 755 "$APP/Contents/Resources/$name"
     echo "  bundled $name"
   else
@@ -45,11 +47,19 @@ for name in pronto imsg; do
 done
 
 # Sign inside-out: nested binaries first, then the bundle.
+# A Developer ID build must use the hardened runtime and a real timestamp or
+# notarization rejects it. Ad-hoc local builds skip both, since neither is available.
+if [ "$IDENTITY" = "-" ]; then
+  SIGN_EXTRA=(--timestamp=none)
+else
+  SIGN_EXTRA=(--options runtime --timestamp --entitlements entitlements.plist)
+fi
+
 for name in pronto imsg; do
   [ -f "$APP/Contents/Resources/$name" ] && \
-    codesign --force --sign "$IDENTITY" --timestamp=none "$APP/Contents/Resources/$name" 2>/dev/null || true
+    codesign --force --sign "$IDENTITY" "${SIGN_EXTRA[@]}" "$APP/Contents/Resources/$name" || true
 done
-codesign --force --sign "$IDENTITY" --timestamp=none "$APP" 2>/dev/null || true
+codesign --force --sign "$IDENTITY" "${SIGN_EXTRA[@]}" "$APP"
 
 echo
 echo "built: $APP"

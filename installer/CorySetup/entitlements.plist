@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <!-- pronto is a bun-compiled binary: it JITs, which the hardened runtime blocks by
+       default, and notarization requires the hardened runtime. Without these two the app
+       signs and notarizes cleanly and then dies on launch, which is the worst failure
+       shape available. -->
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <!-- The wizard runs the bundled pronto and imsg. -->
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict></plist>
