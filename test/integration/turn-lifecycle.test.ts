@@ -150,6 +150,34 @@ async function harness(primary: RuntimeAdapter, fallback?: RuntimeAdapter) {
 }
 
 describe("turn lifecycle", () => {
+  test("flattens markdown from the runtime before it reaches the chat", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: {
+        reply: "1. **FetishCon** (annual)\n- see [the docs](https://example.com/a)\n`npm run build`",
+      },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({
+        ...activation,
+        providerGuid: "IN-MARKDOWN",
+        request: "list the events",
+      });
+      await h.coordinator.idle();
+      const sent = h.transport.sends[0]!.text;
+      expect(sent).not.toContain("**");
+      expect(sent).not.toContain("`");
+      expect(sent).not.toContain("](");
+      expect(sent).toContain("1. FetishCon (annual)");
+      expect(sent).toContain("• see the docs (https://example.com/a)");
+      expect(sent).toContain("npm run build");
+    } finally {
+      h.close();
+    }
+  });
+
   test.each([
     ["a participant", false, "IN-ECHO-PARTICIPANT"],
     ["the owner", true, "IN-ECHO-OWNER"],

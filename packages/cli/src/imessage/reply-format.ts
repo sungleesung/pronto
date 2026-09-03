@@ -1,4 +1,5 @@
 import { findTagRanges } from "../activation";
+import { plainTextFromMarkdown } from "./plain-text";
 
 /**
  * The Messages bridge sends plain text. Put the triggering tag on its own line
@@ -11,7 +12,8 @@ export function formatImessageReplyText(
   request?: string,
 ): string {
   const heading = replyHeading(activationTag, request);
-  return replyText === "" ? heading : `${heading}\n${replyText}`;
+  const body = plainTextFromMarkdown(replyText);
+  return body === "" ? heading : `${heading}\n${body}`;
 }
 
 export function imessageReplyBodyCharacterLimit(
@@ -42,7 +44,7 @@ function requestEcho(request: string | undefined, activationTag: string): string
   for (const [start, end] of [...findTagRanges(request, activationTag)].reverse()) {
     stripped = `${stripped.slice(0, start)}${stripped.slice(end)}`;
   }
-  const collapsed = stripped.replace(/\s+/gu, " ").trim();
+  const collapsed = plainTextFromMarkdown(stripped).replace(/\s+/gu, " ").trim();
   if (collapsed === "") return null;
   const characters = [...collapsed];
   return characters.length <= REQUEST_ECHO_CHARACTER_LIMIT
