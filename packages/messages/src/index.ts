@@ -39,6 +39,8 @@ import type {
   MessagesQualification,
   MessagesRecoveryOutcome,
   MessagesRecoveryReason,
+  MessagesSearchHit,
+  TapbackReaction,
   ResolvedConversation,
   MessagesSubscription,
   ProntoMessages,
@@ -60,6 +62,8 @@ export type {
   MessagesQualification,
   MessagesRecoveryOutcome,
   MessagesRecoveryLimits,
+  MessagesSearchHit,
+  TapbackReaction,
   MessagesRecoveryReason,
   MessagesScopeLimits,
   MessagesSubscription,
@@ -119,6 +123,7 @@ function isGenerationBoundary(error: unknown): error is RecoveryBoundaryError {
 }
 
 class ProntoMessagesClient implements ProntoMessages {
+  readonly #imsgPath: string;
   readonly #rpc: ResilientRpcClient;
   readonly #scoped: ScopedMessagesAccess;
   readonly #recentOutgoing = new Map<string, MessagesEvent>();
@@ -151,6 +156,7 @@ class ProntoMessagesClient implements ProntoMessages {
           ? {}
           : { legacyUnscopedCursor: input.legacyUnscopedCursor }),
       });
+    this.#imsgPath = input.imsgPath;
     this.#rpc = ResilientRpcClient.spawn(input.imsgPath);
     this.#scoped = new ScopedMessagesAccess({
       ...(input.attachmentsRoot === undefined ? {} : { attachmentsRoot: input.attachmentsRoot }),
@@ -242,6 +248,65 @@ class ProntoMessagesClient implements ProntoMessages {
     input: Parameters<ProntoMessages["history"]>[0],
   ): Promise<MessagesHistoryPage> {
     return await this.#scoped.history(input);
+  }
+
+  /**
+   * `imsg react` drives Messages through AppleScript, so it needs Messages.app running
+   * and an Accessibility grant, and it targets the most recent incoming message rather
+   * than a named one. All of that can fail; none of it is worth losing a reply over.
+   */
+  async react(input: Parameters<ProntoMessages["react"]>[0]): Promise<boolean> {
+    const conversation = await this.#scoped
+      .conversation(input.conversation, true)
+      .catch(() => null);
+    if (conversation === null) return false;
+    try {
+      const child = Bun.spawn(
+        [
+          this.#imsgPath,
+          "react",
+          "--chat-id",
+          String(conversation.chatId),
+          "--reaction",
+          input.reaction,
+          "--json",
+        ],
+        { stderr: "ignore", stdout: "ignore" },
+      );
+      return await child.exited === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async search(
+    input: Parameters<ProntoMessages["search"]>[0],
+  ): Promise<readonly MessagesSearchHit[]> {
+    const query = input.query.trim();
+    if (query === "") return [];
+    const response = record(await this.#rpc.request("messages.search", {
+      limit: Math.max(1, Math.min(input.limit ?? 20, 100)),
+      match: input.match ?? "contains",
+      query,
+    }));
+    const rows = Array.isArray(response.messages) ? response.messages : [];
+    return rows.flatMap((raw) => {
+      const row = record(raw);
+      const text = typeof row.text === "string" ? row.text : "";
+      if (text === "") return [];
+      const occurredAt = row.created_at ?? row.date;
+      return [{
+        chatId: typeof row.chat_id === "number" ? row.chat_id : null,
+        chatName: typeof row.chat_name === "string" && row.chat_name !== ""
+          ? row.chat_name
+          : null,
+        fromMe: row.is_from_me === true || row.is_from_me === "True",
+        messageGuid: typeof row.guid === "string" ? row.guid : null,
+        occurredAt: typeof occurredAt === "string" ? occurredAt : null,
+        sender: typeof row.sender === "string" ? row.sender : null,
+        text,
+      }];
+    });
   }
 
   async materializeAttachment(
@@ -989,3 +1054,4 @@ class ProntoMessagesClient implements ProntoMessages {
 export function createProntoMessages(input: CreateProntoMessagesOptions): ProntoMessages {
   return new ProntoMessagesClient(input);
 }
+

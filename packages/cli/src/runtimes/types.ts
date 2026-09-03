@@ -4,6 +4,8 @@ import { MAX_RUNTIME_TEXT_CHARACTERS, MAX_WORKSPACE_CANDIDATES } from "../worksp
 export type ToolActivity = "none" | "observed" | "unknown";
 
 export interface RuntimeOutput {
+  /** Absolute path to a file to attach to the reply. */
+  attachmentPath?: string;
   reply: string;
   summary?: string;
   workspaceCandidates?: string[];
@@ -98,7 +100,20 @@ export function validateRuntimeOutput(value: unknown): RuntimeOutput | null {
     workspaceCandidates = output.workspaceCandidates.map((candidate) => candidate.trim());
     if (workspaceCandidates.some((candidate) => candidate.length === 0)) return null;
   }
+  let attachmentPath: string | undefined;
+  if (output.attachmentPath !== undefined && output.attachmentPath !== null) {
+    if (typeof output.attachmentPath !== "string") return null;
+    const candidate = output.attachmentPath.trim();
+    // Relative paths are rejected outright: the provider resolves them against its own
+    // cwd, not the turn's working directory, so a relative path is silently wrong.
+    if (candidate.length > 4_096) return null;
+    if (candidate.length > 0) {
+      if (!candidate.startsWith("/")) return null;
+      attachmentPath = candidate;
+    }
+  }
   return {
+    ...(attachmentPath === undefined ? {} : { attachmentPath }),
     reply,
     ...(summary === undefined ? {} : { summary }),
     ...(workspaceCandidates === undefined ? {} : { workspaceCandidates }),
@@ -108,6 +123,7 @@ export function validateRuntimeOutput(value: unknown): RuntimeOutput | null {
 export const RUNTIME_OUTPUT_SCHEMA = {
   additionalProperties: false,
   properties: {
+    attachmentPath: { maxLength: 4_096, minLength: 1, type: ["string", "null"] },
     reply: { maxLength: MAX_RUNTIME_TEXT_CHARACTERS, minLength: 1, type: "string" },
     summary: {
       maxLength: MAX_RUNTIME_TEXT_CHARACTERS,
@@ -121,6 +137,6 @@ export const RUNTIME_OUTPUT_SCHEMA = {
       type: ["array", "null"],
     },
   },
-  required: ["reply", "summary", "workspaceCandidates"],
+  required: ["reply", "summary", "workspaceCandidates", "attachmentPath"],
   type: "object",
 } as const;

@@ -36,7 +36,13 @@ export type QueuedEvent = AdmissionInput &
   { admittedAt?: number } &
   (
     | { state: "admitted" }
-    | { acceptedReply: string; lease: string; state: "ready_to_send" }
+    | {
+      acceptedReply: string;
+      /** Absolute path attached to the first bubble of this reply. */
+      attachmentPath?: string;
+      lease: string;
+      state: "ready_to_send";
+    }
   );
 
 export interface OperationalStatus {
@@ -142,7 +148,8 @@ export class DeliveryJournal {
     const row = this.database
       .query(
         `SELECT provider_guid, chat_key, chat_id, conversation_reference, activation_tag,
-                tagged_request, state, accepted_reply, lease_token, created_at, occurred_at
+                tagged_request, state, accepted_reply, lease_token, created_at, occurred_at,
+                attachment_path
          FROM delivery_events
          WHERE state IN ('admitted', 'ready_to_send') AND tagged_request IS NOT NULL
          ORDER BY created_at ASC, rowid ASC
@@ -161,6 +168,7 @@ export class DeliveryJournal {
           lease_token: string | null;
           created_at: number;
           occurred_at: number | null;
+          attachment_path: string | null;
         }
       | null;
     if (row === null) return null;
@@ -183,6 +191,7 @@ export class DeliveryJournal {
     return {
       ...event,
       acceptedReply: row.accepted_reply,
+      ...(row.attachment_path === null ? {} : { attachmentPath: row.attachment_path }),
       lease: row.lease_token,
       state: "ready_to_send",
     };
@@ -353,6 +362,7 @@ export class DeliveryJournal {
     providerGuid: string,
     lease: string,
     output: {
+      attachmentPath?: string;
       reply: string;
       summary?: string;
       workingDirectory?: string;
@@ -371,7 +381,7 @@ export class DeliveryJournal {
           `UPDATE delivery_events
            SET state = 'ready_to_send', accepted_reply = ?, proposed_summary = ?,
                proposed_working_directory = ?, proposed_workspace_candidates = ?,
-               compaction_due = ?, memory_eligible = ?, updated_at = ?
+               compaction_due = ?, memory_eligible = ?, attachment_path = ?, updated_at = ?
            WHERE provider_guid = ? AND lease_token = ? AND state = 'running'`,
         )
         .run(
@@ -383,6 +393,7 @@ export class DeliveryJournal {
             : JSON.stringify(output.workspaceCandidates.slice(0, MAX_WORKSPACE_CANDIDATES)),
           output.summary !== undefined && summary === null ? 1 : 0,
           options.memoryEligible === false ? 0 : 1,
+          output.attachmentPath ?? null,
           this.now(),
           providerGuid,
           lease,

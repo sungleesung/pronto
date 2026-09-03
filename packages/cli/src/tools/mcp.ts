@@ -14,6 +14,21 @@ export const TOOL_DEFINITIONS = [
     name: "current_chat_history",
   },
   {
+    description:
+      "Search the full local Messages archive by text. This spans EVERY chat on the machine, not just the current conversation. Use it to recall something said earlier or in another thread.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: {
+        limit: { maximum: 50, minimum: 1, type: "integer" },
+        match: { enum: ["contains", "exact"], type: "string" },
+        query: { maxLength: 256, minLength: 1, type: "string" },
+      },
+      required: ["query"],
+      type: "object",
+    },
+    name: "search_messages",
+  },
+  {
     description: "Resolve metadata and a canonical local path for an attachment already returned from the current chat.",
     inputSchema: {
       additionalProperties: false,

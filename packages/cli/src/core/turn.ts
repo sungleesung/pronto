@@ -10,6 +10,7 @@ import {
 import type { ChainedRuntimeResult, RuntimeChain } from "../runtimes/chain";
 import type { RuntimeInput } from "../runtimes/types";
 import { formatLatencyReport, isLatencyProbe } from "./latency-probe";
+import { splitReplyText } from "../imessage/split-reply";
 import { chatKeyForId } from "../storage/chat-key";
 import type { DeliveryJournal, QueuedEvent } from "../storage/journal";
 import type { MemoryStore } from "../storage/memory";
@@ -147,6 +148,8 @@ export function confirmedWorkspaceDirectory(
 }
 
 export interface TurnTransport {
+  /** Optional receipt tapback. Returns whether it landed; never rejects. */
+  acknowledge?(chatId: number): Promise<boolean>;
   recentMessages(
     chatId: number,
     limit?: number,
@@ -156,6 +159,7 @@ export interface TurnTransport {
     chatId: number,
     text: string,
     conversation?: ConversationReference,
+    attachmentPath?: string,
   ): Promise<SendDisposition>;
 }
 
@@ -187,7 +191,12 @@ export class TurnProcessor {
         return;
       }
       try {
-        await this.#deliver(event, lease, event.acceptedReply);
+        await this.#deliver(
+          event,
+          lease,
+          event.acceptedReply,
+          event.attachmentPath,
+        );
       } catch {
         const state = this.dependencies.journal.state(event.providerGuid);
         if (state === "sending") this.dependencies.journal.markAmbiguous(event.providerGuid, lease);
@@ -222,6 +231,11 @@ export class TurnProcessor {
       }
       return;
     }
+
+    // The chat gets no signal at all until the reply lands, and that is tens of seconds
+    // away. Tapback the triggering message now. Deliberately not awaited: the receipt is
+    // a courtesy and must never sit in front of the actual work.
+    void this.dependencies.transport.acknowledge?.(event.chatId);
 
     let consumePendingCandidates = false;
     let runtimeStarted = false;
@@ -317,6 +331,9 @@ export class TurnProcessor {
         const shouldUpdateCandidates =
           rendered.candidates.length > 0 || consumePendingCandidates;
         this.dependencies.journal.accept(event.providerGuid, lease, {
+          ...(result.output.attachmentPath === undefined
+            ? {}
+            : { attachmentPath: result.output.attachmentPath }),
           reply: rendered.reply,
           ...(result.output.summary === undefined ? {} : { summary: result.output.summary }),
           ...(proposedWorkingDirectory === null
@@ -324,7 +341,7 @@ export class TurnProcessor {
             : { workingDirectory: proposedWorkingDirectory }),
           ...(shouldUpdateCandidates ? { workspaceCandidates: rendered.candidates } : {}),
         });
-        await this.#deliver(event, lease, rendered.reply);
+        await this.#deliver(event, lease, rendered.reply, result.output.attachmentPath);
       } else if (result.status === "application-failure" || result.toolActivity === "none") {
         await this.#deliverFailure(event, lease, FAILURE_NOTICE, consumePendingCandidates);
       } else {
@@ -387,16 +404,37 @@ export class TurnProcessor {
     await this.#deliver(event, lease, reply);
   }
 
-  async #deliver(event: QueuedEvent, lease: string, text: string): Promise<void> {
+  async #deliver(
+    event: QueuedEvent,
+    lease: string,
+    text: string,
+    attachmentPath?: string,
+  ): Promise<void> {
     const replyText = event.activationTag === undefined
       ? text
       : formatImessageReplyText(event.activationTag, text, event.request);
-    this.dependencies.journal.beginSend(event.providerGuid, lease, event.chatId, replyText);
+    // A long answer reads badly as one bubble. The first bubble is the tracked delivery:
+    // it carries the heading, the attachment, and the fingerprint that stops the listener
+    // re-reading our own message. Later bubbles are continuations of an already-made send.
+    const bubbles = splitReplyText(replyText);
+    const parts = bubbles.length === 0 ? [replyText] : bubbles;
+    this.dependencies.journal.beginSend(event.providerGuid, lease, event.chatId, parts[0]!);
     const disposition = await this.dependencies.transport.sendText(
       event.chatId,
-      replyText,
+      parts[0]!,
       event.conversation,
+      attachmentPath,
     );
+    if (disposition.disposition !== "failed") {
+      for (const part of parts.slice(1)) {
+        const continuation = await this.dependencies.transport.sendText(
+          event.chatId,
+          part,
+          event.conversation,
+        );
+        if (continuation.disposition === "failed") break;
+      }
+    }
     if (disposition.disposition === "confirmed") {
       this.dependencies.journal.confirmDelivery(event.providerGuid, lease, disposition.guid);
     } else if (disposition.disposition === "ambiguous") {

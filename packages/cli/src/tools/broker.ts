@@ -7,6 +7,8 @@ const MAX_REQUEST_BODY_BYTES = 8_192;
 export interface CurrentChatSource {
   details(chatId: number): Promise<unknown>;
   history(chatId: number, limit: number): Promise<unknown>;
+  /** Searches every chat on the machine, not just the current one. */
+  search(query: string, limit: number, match: "contains" | "exact"): Promise<unknown>;
   attachment(
     chatId: number,
     messageGuid: string,
@@ -23,7 +25,8 @@ interface CapabilityState {
 export type CurrentChatTool =
   | "current_chat_details"
   | "current_chat_history"
-  | "current_chat_attachment";
+  | "current_chat_attachment"
+  | "search_messages";
 
 function object(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -126,6 +129,23 @@ export class ConversationBroker {
           throw new Error("History limit must be an integer from 1 to 50");
         }
         result = await this.#source.history(capability.chatId, limit);
+        break;
+      }
+      case "search_messages": {
+        exactKeys(args, ["query", "limit", "match"]);
+        const query = args.query;
+        if (typeof query !== "string" || query.trim().length === 0 || query.length > 256) {
+          throw new Error("Search query must be a string of 1 to 256 characters");
+        }
+        const limit = args.limit ?? 20;
+        if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+          throw new Error("Search limit must be an integer from 1 to 50");
+        }
+        const match = args.match ?? "contains";
+        if (match !== "contains" && match !== "exact") {
+          throw new Error("Search match must be \"contains\" or \"exact\"");
+        }
+        result = await this.#source.search(query, limit, match);
         break;
       }
       case "current_chat_attachment": {

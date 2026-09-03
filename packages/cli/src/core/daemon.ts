@@ -1,6 +1,7 @@
 import type { ProntoConfig } from "../config";
 import { ImsgCurrentChatSource } from "../imessage/current-chat-source";
 import { ImsgTransport } from "../imessage/transport";
+import { isTapbackReaction } from "../imessage/tapback";
 import type { ProntoPaths } from "../macos/paths";
 import { RuntimeChain } from "../runtimes/chain";
 import { createRuntimeAdapter } from "../runtimes/factory";
@@ -64,8 +65,12 @@ export class ProntoDaemon {
       ...(legacyUnscopedCursor === undefined ? {} : { legacyUnscopedCursor }),
       providerStatePath: this.paths.providerStatePath,
     }));
+    // Messages has six tapbacks and no checkmark, so a thumbs up is the closest
+    // "received, working on it". Override with PRONTO_RECEIPT_REACTION.
+    const configuredReaction = process.env.PRONTO_RECEIPT_REACTION;
     const transport = new ImsgTransport(messages, {
       matchesOutboundEcho: (chatId, text) => journal.matchesOutboundEcho(chatId, text),
+      ...(isTapbackReaction(configuredReaction) ? { receiptReaction: configuredReaction } : {}),
     });
     const currentChatSource = new ImsgCurrentChatSource(
       messages,

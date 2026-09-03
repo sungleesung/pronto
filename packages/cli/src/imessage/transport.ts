@@ -1,5 +1,6 @@
 import { activatedRequest, type ActivatedRequest } from "../activation";
 import type {
+  TapbackReaction,
   ConversationFacts,
   ConversationReference,
   MessagesEvent,
@@ -7,6 +8,7 @@ import type {
   ProntoMessages,
 } from "pronto-imessage";
 import { currentChatMessageFromEvent } from "./event-adapter";
+import { DEFAULT_RECEIPT_REACTION } from "./tapback";
 
 export type SendDisposition =
   | { disposition: "confirmed"; guid: string }
@@ -25,8 +27,23 @@ export class ImsgTransport {
     readonly messages: ProntoMessages,
     readonly options: {
       matchesOutboundEcho?: (chatId: number, text: string) => boolean;
+      receiptReaction?: TapbackReaction;
     } = {},
   ) {}
+
+  /**
+   * Tapback the triggering message so the chat shows the request landed. Never throws
+   * and never blocks the turn: without an imsg path there is nothing to call, and a
+   * failed tapback is not a failed reply.
+   */
+  async acknowledge(chatId: number): Promise<boolean> {
+    const conversation = this.#conversations.get(chatId)?.reference;
+    if (conversation === undefined) return false;
+    return await this.messages.react({
+      conversation,
+      reaction: this.options.receiptReaction ?? DEFAULT_RECEIPT_REACTION,
+    });
+  }
 
   async qualify(): Promise<{ degraded: readonly string[]; version: string }> {
     const qualification = await this.messages.qualify();
@@ -99,11 +116,16 @@ export class ImsgTransport {
     chatId: number,
     text: string,
     restoredConversation?: ConversationReference,
+    attachmentPath?: string,
   ): Promise<SendDisposition> {
     const conversation = this.#conversations.get(chatId)?.reference ?? restoredConversation;
     if (conversation === undefined) throw new Error("Current conversation scope is unavailable");
     if (conversation.chatId !== chatId) throw new Error("Current conversation scope is unavailable");
-    const outcome = await this.messages.reply({ conversation, text });
+    const outcome = await this.messages.reply({
+      conversation,
+      ...(attachmentPath === undefined ? {} : { filePath: attachmentPath }),
+      text,
+    });
     if (outcome.status === "confirmed") {
       return { disposition: "confirmed", guid: outcome.providerMessageId };
     }

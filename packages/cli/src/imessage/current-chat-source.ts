@@ -42,6 +42,26 @@ export class ImsgCurrentChatSource implements CurrentChatSource {
     };
   }
 
+  async search(
+    query: string,
+    limit: number,
+    match: "contains" | "exact",
+  ): Promise<unknown> {
+    const hits = await this.messages.search({ limit, match, query });
+    return {
+      hits: hits.map((hit) => ({
+        chat_id: hit.chatId,
+        chat_name: hit.chatName,
+        from_me: hit.fromMe,
+        occurred_at: hit.occurredAt,
+        sender: hit.sender,
+        text: hit.text,
+      })),
+      query,
+      scope: "all chats on this machine",
+    };
+  }
+
   async history(chatId: number, limit: number): Promise<unknown> {
     const context = this.#context(chatId);
     const page = await this.messages.history({

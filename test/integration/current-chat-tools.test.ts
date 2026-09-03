@@ -7,6 +7,13 @@ class TwoChatSource implements CurrentChatSource {
     return { opaqueFixtureChat: chatId === 1 ? "alpha" : "beta" };
   }
 
+  async search(): Promise<unknown> {
+
+    return { hits: [] };
+
+  }
+
+
   async history(chatId: number, limit: number): Promise<unknown> {
     return { chat: chatId, limit, messages: [] };
   }

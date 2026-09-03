@@ -24,6 +24,13 @@ class FakeSource implements CurrentChatSource {
     return { participants: ["participant"], service: "iMessage" };
   }
 
+  async search(): Promise<unknown> {
+
+    return { hits: [] };
+
+  }
+
+
   async history(chatId: number, limit: number): Promise<unknown> {
     this.calls.push({ chatId, tool: "history" });
     return { messages: [{ text: "x".repeat(limit * 20) }] };

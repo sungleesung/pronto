@@ -125,6 +125,25 @@ export interface MessagesDiagnostics {
   readonly state: "closed" | "degraded" | "ready" | "recovering" | "starting";
 }
 
+/** The six tapbacks Messages supports. There is no checkmark. */
+export type TapbackReaction =
+  | "love"
+  | "like"
+  | "dislike"
+  | "laugh"
+  | "emphasis"
+  | "question";
+
+export interface MessagesSearchHit {
+  readonly chatId: number | null;
+  readonly chatName: string | null;
+  readonly fromMe: boolean;
+  readonly messageGuid: string | null;
+  readonly occurredAt: string | null;
+  readonly sender: string | null;
+  readonly text: string;
+}
+
 export interface MessagesRecoveryLimits {
   readonly maxAgeMs?: number;
   readonly maxDurationMs?: number;
@@ -198,6 +217,23 @@ export interface ProntoMessages {
     readonly maxBytes: number;
   }): Promise<MaterializedAttachment>;
   qualify(): Promise<MessagesQualification>;
+  /**
+   * Tapback the most recent incoming message in a conversation. Best effort: resolves
+   * false rather than rejecting, because a missing acknowledgement must never cost a reply.
+   */
+  react(input: {
+    readonly conversation: ConversationReference;
+    readonly reaction: TapbackReaction;
+  }): Promise<boolean>;
+  /**
+   * Full-text search across the local Messages archive. Unlike `history`, this is NOT
+   * scoped to one conversation: it spans every chat on the machine.
+   */
+  search(input: {
+    readonly limit?: number;
+    readonly match?: "contains" | "exact";
+    readonly query: string;
+  }): Promise<readonly MessagesSearchHit[]>;
   reply(input: {
     readonly conversation: ConversationReference;
     readonly filePath?: string;

@@ -11,6 +11,7 @@ test("advertises only deterministic read-only current-chat tools", async () => {
   expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
     "current_chat_details",
     "current_chat_history",
+    "search_messages",
     "current_chat_attachment",
   ]);
   expect(JSON.stringify(TOOL_DEFINITIONS)).not.toMatch(/send|react|vote|edit|unsend/i);

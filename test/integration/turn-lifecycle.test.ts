@@ -62,7 +62,7 @@ class OrderedAdapter implements RuntimeAdapter {
 }
 
 class FakeTransport {
-  readonly sends: Array<{ chatId: number; text: string }> = [];
+  readonly sends: Array<{ attachmentPath?: string; chatId: number; text: string }> = [];
   disposition: SendDisposition = { disposition: "confirmed", guid: "OUT-1" };
   async recentMessages(): Promise<unknown[]> {
     return [
@@ -85,8 +85,24 @@ class FakeTransport {
       },
     ];
   }
-  async sendText(chatId: number, text: string): Promise<SendDisposition> {
-    this.sends.push({ chatId, text });
+  readonly acknowledged: number[] = [];
+
+  async acknowledge(chatId: number): Promise<boolean> {
+    this.acknowledged.push(chatId);
+    return true;
+  }
+
+  async sendText(
+    chatId: number,
+    text: string,
+    _conversation?: unknown,
+    attachmentPath?: string,
+  ): Promise<SendDisposition> {
+    this.sends.push({
+      ...(attachmentPath === undefined ? {} : { attachmentPath }),
+      chatId,
+      text,
+    });
     return this.disposition;
   }
 }
@@ -95,6 +111,7 @@ const source: CurrentChatSource = {
   attachment: async () => null,
   details: async () => ({}),
   history: async () => ({ messages: [] }),
+  search: async () => ({ hits: [] }),
 };
 
 const activation: ActivatedRequest = {
@@ -150,6 +167,64 @@ async function harness(primary: RuntimeAdapter, fallback?: RuntimeAdapter) {
 }
 
 describe("turn lifecycle", () => {
+  test("acknowledges a real turn with a tapback, but not the latency probe", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "Done." },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({ ...activation, providerGuid: "IN-ACK", request: "do the thing" });
+      await h.coordinator.idle();
+      expect(h.transport.acknowledged).toEqual([42]);
+
+      h.coordinator.admit({ ...activation, providerGuid: "IN-ACK-PROBE", request: "ping test" });
+      await h.coordinator.idle();
+      // The probe answers in well under a second, so an acknowledgement would be noise.
+      expect(h.transport.acknowledged).toEqual([42]);
+    } finally {
+      h.close();
+    }
+  });
+
+  test("attaches the runtime's file to the first bubble only", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { attachmentPath: "/tmp/chart.png", reply: "Here is the chart." },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({ ...activation, providerGuid: "IN-FILE", request: "chart it" });
+      await h.coordinator.idle();
+      expect(h.transport.sends).toHaveLength(1);
+      expect(h.transport.sends[0]!.attachmentPath).toBe("/tmp/chart.png");
+    } finally {
+      h.close();
+    }
+  });
+
+  test("splits a long reply into several bubbles, heading on the first", async () => {
+    const paragraph = "y".repeat(900);
+    const primary = new FakeAdapter("codex", {
+      output: { reply: [paragraph, paragraph, paragraph].join("\n\n") },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({ ...activation, providerGuid: "IN-LONG", request: "explain it" });
+      await h.coordinator.idle();
+      expect(h.transport.sends.length).toBeGreaterThan(1);
+      expect(h.transport.sends[0]!.text.startsWith("Helper \u00b7 re: \u201cexplain it\u201d")).toBe(true);
+      expect(h.transport.sends.slice(1).every((s) => !s.text.includes("re: "))).toBe(true);
+      expect(h.transport.sends.every((s) => s.text.length <= 1_300)).toBe(true);
+    } finally {
+      h.close();
+    }
+  });
+
   test("flattens markdown from the runtime before it reaches the chat", async () => {
     const primary = new FakeAdapter("codex", {
       output: {
@@ -435,9 +510,12 @@ describe("turn lifecycle", () => {
       h.coordinator.admit({ ...activation, providerGuid: "IN-BOUNDED", request: "find it" });
       await h.coordinator.idle();
 
-      expect(h.transport.sends[0]!.text.length).toBeLessThanOrEqual(4_000);
-      expect(h.transport.sends[0]!.text).toContain(`1. ${await realpath(valid)}`);
-      expect(h.transport.sends[0]!.text).not.toContain("missing");
+      // A reply this long is delivered as several bubbles; the bound applies to each.
+      const composed = h.transport.sends.map((send) => send.text).join("\n\n");
+      expect(h.transport.sends.every((send) => send.text.length <= 4_000)).toBe(true);
+      expect(composed).toContain(`1. ${await realpath(valid)}`);
+      expect(composed).not.toContain("missing");
+      const firstTurnSends = h.transport.sends.length;
       expect(h.workspaces.get(chatKeyForId(42, h.salt)).pendingCandidates).toEqual([
         await realpath(valid),
       ]);
@@ -456,7 +534,9 @@ describe("turn lifecycle", () => {
         request: "find it again",
       });
       await h.coordinator.idle();
-      expect(h.transport.sends[1]!.text).toBe("Helper \u00b7 re: \u201cfind it again\u201d\nNo valid projects.");
+      expect(
+        h.transport.sends.slice(firstTurnSends).map((send) => send.text).join("\n\n"),
+      ).toBe("Helper \u00b7 re: \u201cfind it again\u201d\nNo valid projects.");
       expect(h.workspaces.get(chatKeyForId(42, h.salt)).pendingCandidates).toEqual([]);
     } finally {
       h.close();
