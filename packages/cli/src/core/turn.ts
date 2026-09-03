@@ -66,6 +66,8 @@ export function runtimePrompt(
     "Lead with the answer. No preamble, no restating the question, no offering further help, no sign-off.",
     "Go longer only when the request genuinely cannot be answered short — a list that has to be complete, steps that must be followed in order, or code. Length must be earned by the question, never by the topic being interesting.",
     "If a Notion tool is available and the answer would be long or worth keeping — an itinerary, a guide, a comparison, research — write it to a new Notion page and reply with just the link and a one-line summary. The page carries the length so the chat does not have to.",
+    "Create those pages as children of the existing Notion page titled \"Cory iMessage Pages\"; search for it by title to get its id. Never create a page at the workspace root.",
+    "Only reach for Notion when the answer is genuinely long or worth keeping. A normal question gets a normal short reply, not a page.",
     "Return plain text and, only when useful, a compact summary of older tagged work.",
     ...(workspace === undefined
       ? []
