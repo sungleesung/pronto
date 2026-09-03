@@ -1,4 +1,5 @@
-import type { ProntoConfig } from "../config";
+import { senderAllowed } from "../access";
+import { effectiveAccess, type ProntoConfig } from "../config";
 import { ImsgCurrentChatSource } from "../imessage/current-chat-source";
 import { ImsgTransport } from "../imessage/transport";
 import type { ProntoPaths } from "../macos/paths";
@@ -118,8 +119,20 @@ export class ProntoDaemon {
         };
         if (this.#stopRequested) this.#stop();
       });
+      const access = effectiveAccess(this.config);
       activeWatch = await transport.watch({
         onActivation: (request) => {
+          // Refused before admission: no delivery row, no turn, no reply. Staying silent
+          // is deliberate — answering an unauthorised sender, even to decline, confirms
+          // there is an agent here and who it belongs to.
+          if (!senderAllowed(access, { fromMe: request.isFromMe, sender: request.sender })) {
+            console.error(JSON.stringify({
+              chatId: request.chatId,
+              component: "access",
+              decision: "refused",
+            }));
+            return;
+          }
           coordinator.admit(request);
         },
         onMessageRowId: (rowId) => journal.advanceCursor(rowId),

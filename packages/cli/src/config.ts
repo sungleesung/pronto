@@ -1,12 +1,22 @@
 import { chmod, lstat, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
+import { isAccessPolicy, type AccessPolicy } from "./access";
 
 export const CONFIG_VERSION = 2 as const;
 export const UNRESTRICTED_TRUST_VERSION = 1 as const;
 export const TAG_PATTERN = /^@[A-Za-z0-9_-]{1,32}$/;
 
 export type RuntimeKind = "codex" | "claude";
+
+/**
+ * Absent means everyone, which is what every install before this field behaved like.
+ * Changing that silently would lock people out of their own agent on upgrade; the choice
+ * is made explicitly at setup instead.
+ */
+export function effectiveAccess(config: { access?: AccessPolicy }): AccessPolicy {
+  return config.access ?? { mode: "everyone" };
+}
 
 export interface ProntoConfig {
   version: typeof CONFIG_VERSION;
@@ -20,6 +30,8 @@ export interface ProntoConfig {
   fallbackRuntimePath?: string;
   workingDirectory: string;
   unrestrictedTrustVersion: typeof UNRESTRICTED_TRUST_VERSION;
+  /** Who may instruct the agent. Absent is treated as everyone. */
+  access?: AccessPolicy;
 }
 
 export type ConfigInput = Omit<
@@ -161,6 +173,11 @@ export async function loadConfig(path: string): Promise<ProntoConfig> {
   if (typeof value.chatKeySalt !== "string" || value.chatKeySalt.length < 32) {
     throw new Error("Invalid chat-key salt");
   }
+  // A malformed policy is refused rather than ignored: silently falling back to "everyone"
+  // would turn a typo in the allowlist into open access.
+  if (value.access !== undefined && !isAccessPolicy(value.access)) {
+    throw new Error("Invalid access policy");
+  }
 
   return createConfig({
     ...(value.fallbackRuntime === undefined
@@ -175,6 +192,7 @@ export async function loadConfig(path: string): Promise<ProntoConfig> {
     ...(typeof value.fallbackRuntimePath === "string"
       ? { fallbackRuntimePath: value.fallbackRuntimePath }
       : {}),
+    ...(value.access === undefined ? {} : { access: value.access as AccessPolicy }),
     imsgPath: value.imsgPath,
     chatKeySalt: value.chatKeySalt,
     primaryRuntime: value.primaryRuntime,

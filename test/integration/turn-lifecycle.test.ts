@@ -128,6 +128,7 @@ const activation: ActivatedRequest = {
   isFromMe: false,
   occurredAt: "2026-09-01T12:00:00.000Z",
   providerGuid: "IN-1",
+  sender: "+15555550100",
   request: "Draft the launch note.",
   rowId: 1,
 };

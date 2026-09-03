@@ -58,6 +58,7 @@ describe("activation", () => {
       isFromMe: false,
       occurredAt: "2026-09-01T12:00:00.000Z",
       providerGuid: "message-guid",
+      sender: "+15555550100",
       request: "summarize this",
       rowId: 101,
     });

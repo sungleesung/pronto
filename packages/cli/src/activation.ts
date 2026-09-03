@@ -10,6 +10,8 @@ export interface ActivatedRequest {
   providerGuid: string;
   request: string;
   rowId: number;
+  /** Who sent it, as Messages recorded it. Null when the provider omits it. */
+  sender: string | null;
 }
 
 function escapeRegExp(value: string): string {
@@ -91,5 +93,6 @@ export function activatedRequest(
     providerGuid: message.providerMessageId,
     request: activation.request,
     rowId: message.rowId,
+    sender: message.sender,
   };
 }
