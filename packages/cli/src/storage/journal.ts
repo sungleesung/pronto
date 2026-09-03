@@ -224,6 +224,43 @@ export class DeliveryJournal {
     return rows.map((row) => row.duration);
   }
 
+  /**
+   * Sets aside the newest request for a chat that has not started running yet, and hands
+   * back its text so a revision can absorb it. Only 'admitted' qualifies: once a turn is
+   * running its work is already underway, and once it is ready_to_send the answer exists.
+   *
+   * The superseded row is parked rather than deleted — it settled without a reply, which
+   * is exactly what parked means, and keeping it preserves the record of what was asked.
+   */
+  supersedePending(chatKey: string): { activationTag?: string; request: string } | null {
+    return this.database.transaction(() => {
+      const row = this.database
+        .query(
+          `SELECT provider_guid, tagged_request, activation_tag
+           FROM delivery_events
+           WHERE chat_key = ? AND state = 'admitted' AND tagged_request IS NOT NULL
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT 1`,
+        )
+        .get(chatKey) as
+        | { provider_guid: string; tagged_request: string; activation_tag: string | null }
+        | null;
+      if (row === null) return null;
+      const changed = this.database
+        .query(
+          `UPDATE delivery_events
+           SET state = 'parked', conversation_reference = NULL, updated_at = ?
+           WHERE provider_guid = ? AND state = 'admitted'`,
+        )
+        .run(this.now(), row.provider_guid).changes;
+      if (changed !== 1) return null;
+      return {
+        ...(row.activation_tag === null ? {} : { activationTag: row.activation_tag }),
+        request: row.tagged_request,
+      };
+    })();
+  }
+
   cursor(): number | undefined {
     const row = this.database
       .query("SELECT value FROM service_state WHERE key = 'message_cursor'")

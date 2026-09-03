@@ -54,6 +54,22 @@ function removeOneMatchedTag(
   };
 }
 
+/**
+ * "btw ..." revises the request the sender just made, rather than asking something new.
+ * It mirrors the way an aside works in conversation: the turn already in flight should
+ * answer the amended question, not answer twice.
+ */
+const AMENDMENT_PREFIX = /^btw\b[\s,.:;!—–-]*/iu;
+
+export function isAmendment(request: string): boolean {
+  return AMENDMENT_PREFIX.test(request.trim());
+}
+
+/** The revision itself, with the "btw" stripped. Empty when nothing followed it. */
+export function amendmentBody(request: string): string {
+  return request.trim().replace(AMENDMENT_PREFIX, "").trim();
+}
+
 export function activatedRequest(
   event: MessagesEvent,
   tags: readonly string[],

@@ -174,6 +174,76 @@ async function harness(
 }
 
 describe("turn lifecycle", () => {
+  test("a btw folds into the request it revises and answers once", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "Vegetarian version ready." },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      // Both arrive before the drain starts the first one, which is the real timing:
+      // detection takes long enough that an aside usually lands first.
+      h.coordinator.admit({ ...activation, providerGuid: "IN-ORIG", request: "recipe for chicken parm" });
+      h.coordinator.admit({ ...activation, providerGuid: "IN-BTW", request: "btw make it vegetarian" });
+      await h.coordinator.idle();
+
+      // One model turn, one reply — not two.
+      expect(primary.inputs).toHaveLength(1);
+      expect(h.transport.sends).toHaveLength(1);
+
+      const prompt = primary.inputs[0]!.prompt;
+      expect(prompt).toContain("recipe for chicken parm");
+      expect(prompt).toContain("make it vegetarian");
+      expect(prompt).toContain("REVISION");
+
+      // The superseded request is kept, settled without a reply.
+      expect(h.journal.state("IN-ORIG")).toBe("parked");
+    } finally {
+      h.close();
+    }
+  });
+
+  test("a btw with nothing pending stands on its own", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "Noted." },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({ ...activation, providerGuid: "IN-LONE-BTW", request: "btw make it vegetarian" });
+      await h.coordinator.idle();
+      expect(primary.inputs).toHaveLength(1);
+      // Nothing to fold into, but it still reads as an amendment rather than a new question.
+      expect(primary.inputs[0]!.prompt).toContain("REVISION of the request");
+      expect(primary.inputs[0]!.prompt).toContain("make it vegetarian");
+      expect(h.transport.sends).toHaveLength(1);
+    } finally {
+      h.close();
+    }
+  });
+
+  test("a btw does not fold into a request already running", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "done" },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({ ...activation, providerGuid: "IN-FIRST", request: "recipe for chicken parm" });
+      await h.coordinator.idle();
+      // The first turn has already been answered, so there is nothing left to revise.
+      h.coordinator.admit({ ...activation, providerGuid: "IN-LATE", request: "btw make it vegetarian" });
+      await h.coordinator.idle();
+      expect(primary.inputs).toHaveLength(2);
+      expect(h.journal.state("IN-FIRST")).toBe("delivered");
+    } finally {
+      h.close();
+    }
+  });
+
   test("runs turns from different chats at the same time", async () => {
     const primary = new OrderedAdapter();
     const h = await harness(primary);

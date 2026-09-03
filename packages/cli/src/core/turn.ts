@@ -1,4 +1,4 @@
-import type { ActivatedRequest } from "../activation";
+import { amendmentBody, isAmendment, type ActivatedRequest } from "../activation";
 import { assembleContext, type ContextEnvelope, type RecentMessage } from "../context/assemble";
 import { parseCurrentChatMessage } from "../imessage/event-adapter";
 import type { SendDisposition } from "../imessage/transport";
@@ -491,14 +491,41 @@ export class TurnCoordinator {
     const occurredAt = request.occurredAt === null
       ? Number.NaN
       : Date.parse(request.occurredAt);
+    const chatKey = chatKeyForId(request.chatId, this.chatKeySalt);
+
+    // "btw ..." amends what was just asked. If that request has not started running, fold
+    // the two together and answer once, rather than replying twice to one intent. Once the
+    // turn is running it is too late to fold, and the revision becomes its own turn.
+    let text = request.request;
+    if (isAmendment(text)) {
+      const revision = amendmentBody(text);
+      const pending = revision === "" ? null : this.journal.supersedePending(chatKey);
+      if (pending !== null) {
+        text = [
+          pending.request,
+          "",
+          `REVISION from the same person, replacing or adjusting the request above: ${revision}`,
+          "Answer the revised request once. Do not answer the original separately.",
+        ].join("\n");
+      } else if (revision !== "") {
+        // Too late to fold — the earlier turn is already running or answered. Still treat
+        // it as a revision so the aside amends what was just asked instead of being read
+        // as a new question on its own.
+        text = [
+          `REVISION of the request this person just made: ${revision}`,
+          "Find that request in the recent conversation and answer the revised version of it, not this line on its own. Do not repeat the earlier answer unchanged.",
+        ].join("\n");
+      }
+    }
+
     const result = this.journal.admit({
       activationTag: request.activationTag,
       chatId: request.chatId,
-      chatKey: chatKeyForId(request.chatId, this.chatKeySalt),
+      chatKey,
       conversation: request.conversation,
       ...(Number.isFinite(occurredAt) ? { occurredAt } : {}),
       providerGuid: request.providerGuid,
-      request: request.request,
+      request: text,
     });
     if (result.status === "accepted") this.#schedule();
     return result.status;
