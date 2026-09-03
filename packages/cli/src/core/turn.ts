@@ -62,7 +62,11 @@ export function runtimePrompt(
     "Messages renders no markdown, so write plain sentences. Long replies are split into several bubbles automatically.",
     "Complete the authorized request using your unrestricted local tools without asking for approval.",
     "If the request describes a project folder but does not give an explicit switch command, search for likely existing directories and return up to five canonical paths in workspaceCandidates. Ask the chat to answer with a number. Do not claim the folder changed.",
-    "Return one concise plain-text reply and, only when useful, a compact summary of older tagged work.",
+    "Keep the reply SHORT: a sentence or two, a short paragraph at most. This is a text message in a chat, not a document, and the person is waiting on their phone.",
+    "Lead with the answer. No preamble, no restating the question, no offering further help, no sign-off.",
+    "Go longer only when the request genuinely cannot be answered short — a list that has to be complete, steps that must be followed in order, or code. Length must be earned by the question, never by the topic being interesting.",
+    "If a Notion tool is available and the answer would be long or worth keeping — an itinerary, a guide, a comparison, research — write it to a new Notion page and reply with just the link and a one-line summary. The page carries the length so the chat does not have to.",
+    "Return plain text and, only when useful, a compact summary of older tagged work.",
     ...(workspace === undefined
       ? []
       : [

@@ -70,6 +70,29 @@ function parseClaude(stdout: string): { output: unknown; toolActivity: ToolActiv
   return { output, toolActivity };
 }
 
+/**
+ * Notion, when the daemon has a token for it. Absent otherwise: an unconfigured server
+ * would show the model tools that cannot work, and every reply that reached for one
+ * would fail. The server is discovered through MCP, so no prompt change is needed to
+ * tell the model the tools exist.
+ *
+ * The token is read from the daemon's environment rather than stored in pronto's config,
+ * so it never lands in a file pronto writes.
+ */
+export function notionMcpServer(
+  token: string | undefined,
+): Record<string, { args: string[]; command: string; env: Record<string, string> }> {
+  const trimmed = token?.trim();
+  if (trimmed === undefined || trimmed === "") return {};
+  return {
+    notion: {
+      args: ["-y", "@notionhq/notion-mcp-server"],
+      command: "npx",
+      env: { NOTION_TOKEN: trimmed },
+    },
+  };
+}
+
 export class ClaudeAdapter implements RuntimeAdapter {
   readonly kind = "claude" as const;
 
@@ -86,6 +109,7 @@ export class ClaudeAdapter implements RuntimeAdapter {
       mcpPath,
       JSON.stringify({
         mcpServers: {
+          ...notionMcpServer(process.env.NOTION_TOKEN),
           [PRONTO_MCP_SERVER_NAME]: {
             args: [...(input.bridgeExecutableArgs ?? []), "mcp"],
             command: input.bridgeExecutablePath,
