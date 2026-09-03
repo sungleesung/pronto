@@ -72,7 +72,6 @@ test("queries details, rich history, and materialized attachments through public
         sizeBytes: 12,
       };
     },
-    react: async () => true,
     search: async () => [],
     qualify: async () => ({
       databaseGeneration: "generation",

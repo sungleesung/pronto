@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { findTagRanges } from "../../packages/cli/src/activation";
-import {
-  formatImessageReplyText,
-  imessageReplyBodyCharacterLimit,
-} from "../../packages/cli/src/imessage/reply-format";
+import { acknowledgementText, formatImessageReplyText, imessageReplyBodyCharacterLimit } from "../../packages/cli/src/imessage/reply-format";
 
 describe("iMessage reply formatting", () => {
   test("puts the triggering tag in title case on its own first line", () => {
@@ -28,4 +25,10 @@ describe("iMessage reply formatting", () => {
     const limit = imessageReplyBodyCharacterLimit("@research", 4_000);
     expect(formatImessageReplyText("@research", "x".repeat(limit))).toHaveLength(4_000);
   });
+});
+
+test("acknowledgement names the tag and says what is happening", () => {
+  expect(acknowledgementText("@cory")).toBe("Cory - Working on that now");
+  expect(acknowledgementText("cory")).toBe("Cory - Working on that now");
+  expect(acknowledgementText("@helper")).toBe("Helper - Working on that now");
 });

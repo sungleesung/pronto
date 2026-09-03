@@ -40,7 +40,6 @@ import type {
   MessagesRecoveryOutcome,
   MessagesRecoveryReason,
   MessagesSearchHit,
-  TapbackReaction,
   ResolvedConversation,
   MessagesSubscription,
   ProntoMessages,
@@ -63,7 +62,6 @@ export type {
   MessagesRecoveryOutcome,
   MessagesRecoveryLimits,
   MessagesSearchHit,
-  TapbackReaction,
   MessagesRecoveryReason,
   MessagesScopeLimits,
   MessagesSubscription,
@@ -123,7 +121,6 @@ function isGenerationBoundary(error: unknown): error is RecoveryBoundaryError {
 }
 
 class ProntoMessagesClient implements ProntoMessages {
-  readonly #imsgPath: string;
   readonly #rpc: ResilientRpcClient;
   readonly #scoped: ScopedMessagesAccess;
   readonly #recentOutgoing = new Map<string, MessagesEvent>();
@@ -156,7 +153,6 @@ class ProntoMessagesClient implements ProntoMessages {
           ? {}
           : { legacyUnscopedCursor: input.legacyUnscopedCursor }),
       });
-    this.#imsgPath = input.imsgPath;
     this.#rpc = ResilientRpcClient.spawn(input.imsgPath);
     this.#scoped = new ScopedMessagesAccess({
       ...(input.attachmentsRoot === undefined ? {} : { attachmentsRoot: input.attachmentsRoot }),
@@ -248,35 +244,6 @@ class ProntoMessagesClient implements ProntoMessages {
     input: Parameters<ProntoMessages["history"]>[0],
   ): Promise<MessagesHistoryPage> {
     return await this.#scoped.history(input);
-  }
-
-  /**
-   * `imsg react` drives Messages through AppleScript, so it needs Messages.app running
-   * and an Accessibility grant, and it targets the most recent incoming message rather
-   * than a named one. All of that can fail; none of it is worth losing a reply over.
-   */
-  async react(input: Parameters<ProntoMessages["react"]>[0]): Promise<boolean> {
-    const conversation = await this.#scoped
-      .conversation(input.conversation, true)
-      .catch(() => null);
-    if (conversation === null) return false;
-    try {
-      const child = Bun.spawn(
-        [
-          this.#imsgPath,
-          "react",
-          "--chat-id",
-          String(conversation.chatId),
-          "--reaction",
-          input.reaction,
-          "--json",
-        ],
-        { stderr: "ignore", stdout: "ignore" },
-      );
-      return await child.exited === 0;
-    } catch {
-      return false;
-    }
   }
 
   async search(

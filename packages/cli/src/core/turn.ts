@@ -151,8 +151,8 @@ export function confirmedWorkspaceDirectory(
 }
 
 export interface TurnTransport {
-  /** Optional receipt tapback. Returns whether it landed; never rejects. */
-  acknowledge?(chatId: number): Promise<boolean>;
+  /** Optional "working on it" message. Returns whether it landed; never rejects. */
+  acknowledge?(chatId: number, activationTag: string): Promise<boolean>;
   recentMessages(
     chatId: number,
     limit?: number,
@@ -236,9 +236,11 @@ export class TurnProcessor {
     }
 
     // The chat gets no signal at all until the reply lands, and that is tens of seconds
-    // away. Tapback the triggering message now. Deliberately not awaited: the receipt is
-    // a courtesy and must never sit in front of the actual work.
-    void this.dependencies.transport.acknowledge?.(event.chatId);
+    // away. Say we picked it up. Deliberately not awaited: the acknowledgement is a
+    // courtesy and must never sit in front of the actual work.
+    if (event.activationTag !== undefined) {
+      void this.dependencies.transport.acknowledge?.(event.chatId, event.activationTag);
+    }
 
     let consumePendingCandidates = false;
     let runtimeStarted = false;

@@ -1,6 +1,5 @@
 import { activatedRequest, type ActivatedRequest } from "../activation";
 import type {
-  TapbackReaction,
   ConversationFacts,
   ConversationReference,
   MessagesEvent,
@@ -8,7 +7,7 @@ import type {
   ProntoMessages,
 } from "pronto-imessage";
 import { currentChatMessageFromEvent } from "./event-adapter";
-import { DEFAULT_RECEIPT_REACTION } from "./tapback";
+import { acknowledgementText } from "./reply-format";
 
 export type SendDisposition =
   | { disposition: "confirmed"; guid: string }
@@ -27,22 +26,25 @@ export class ImsgTransport {
     readonly messages: ProntoMessages,
     readonly options: {
       matchesOutboundEcho?: (chatId: number, text: string) => boolean;
-      receiptReaction?: TapbackReaction;
     } = {},
   ) {}
 
   /**
-   * Tapback the triggering message so the chat shows the request landed. Never throws
-   * and never blocks the turn: without an imsg path there is nothing to call, and a
-   * failed tapback is not a failed reply.
+   * Tell the chat the request landed. Never throws and never blocks the turn: a missing
+   * acknowledgement costs a nicety, while a thrown one would cost the reply.
    */
-  async acknowledge(chatId: number): Promise<boolean> {
+  async acknowledge(chatId: number, activationTag: string): Promise<boolean> {
     const conversation = this.#conversations.get(chatId)?.reference;
     if (conversation === undefined) return false;
-    return await this.messages.react({
-      conversation,
-      reaction: this.options.receiptReaction ?? DEFAULT_RECEIPT_REACTION,
-    });
+    try {
+      const outcome = await this.messages.reply({
+        conversation,
+        text: acknowledgementText(activationTag),
+      });
+      return outcome.status !== "failed";
+    } catch {
+      return false;
+    }
   }
 
   async qualify(): Promise<{ degraded: readonly string[]; version: string }> {

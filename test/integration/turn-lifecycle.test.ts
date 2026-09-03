@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ActivatedRequest } from "../../packages/cli/src/activation";
 import { FAILURE_NOTICE, TurnCoordinator, TurnProcessor } from "../../packages/cli/src/core/turn";
+import { acknowledgementText } from "../../packages/cli/src/imessage/reply-format";
 import type { SendDisposition } from "../../packages/cli/src/imessage/transport";
 import { RuntimeChain } from "../../packages/cli/src/runtimes/chain";
 import type {
@@ -85,10 +86,10 @@ class FakeTransport {
       },
     ];
   }
-  readonly acknowledged: number[] = [];
+  readonly acknowledged: Array<{ chatId: number; text: string }> = [];
 
-  async acknowledge(chatId: number): Promise<boolean> {
-    this.acknowledged.push(chatId);
+  async acknowledge(chatId: number, activationTag: string): Promise<boolean> {
+    this.acknowledged.push({ chatId, text: acknowledgementText(activationTag) });
     return true;
   }
 
@@ -215,7 +216,7 @@ describe("turn lifecycle", () => {
     }
   });
 
-  test("acknowledges a real turn with a tapback, but not the latency probe", async () => {
+  test("says it is working on a real turn, but not on the latency probe", async () => {
     const primary = new FakeAdapter("codex", {
       output: { reply: "Done." },
       status: "success",
@@ -225,12 +226,14 @@ describe("turn lifecycle", () => {
     try {
       h.coordinator.admit({ ...activation, providerGuid: "IN-ACK", request: "do the thing" });
       await h.coordinator.idle();
-      expect(h.transport.acknowledged).toEqual([42]);
+      expect(h.transport.acknowledged).toEqual([
+        { chatId: 42, text: "Helper - Working on that now" },
+      ]);
 
       h.coordinator.admit({ ...activation, providerGuid: "IN-ACK-PROBE", request: "ping test" });
       await h.coordinator.idle();
       // The probe answers in well under a second, so an acknowledgement would be noise.
-      expect(h.transport.acknowledged).toEqual([42]);
+      expect(h.transport.acknowledged).toHaveLength(1);
     } finally {
       h.close();
     }
@@ -265,7 +268,7 @@ describe("turn lifecycle", () => {
       h.coordinator.admit({ ...activation, providerGuid: "IN-LONG", request: "explain it" });
       await h.coordinator.idle();
       expect(h.transport.sends.length).toBeGreaterThan(1);
-      expect(h.transport.sends[0]!.text.startsWith("Helper \u00b7 re: \u201cexplain it\u201d")).toBe(true);
+      expect(h.transport.sends[0]!.text.startsWith("Helper\nre: \u201cexplain it\u201d")).toBe(true);
       expect(h.transport.sends.slice(1).every((s) => !s.text.includes("re: "))).toBe(true);
       expect(h.transport.sends.every((s) => s.text.length <= 1_300)).toBe(true);
     } finally {
@@ -321,7 +324,7 @@ describe("turn lifecycle", () => {
       await h.coordinator.idle();
       expect(h.transport.sends).toHaveLength(1);
       expect(h.transport.sends[0]!.text).toBe(
-        "Helper \u00b7 re: \u201ccheck the deploy\u201d\nOn it.",
+        "Helper\nre: \u201ccheck the deploy\u201d\nOn it.",
       );
     } finally {
       h.close();
@@ -347,7 +350,7 @@ describe("turn lifecycle", () => {
       expect(primary.inputs).toHaveLength(0);
       expect(h.transport.sends).toHaveLength(1);
       const sent = h.transport.sends[0]!.text;
-      expect(sent).toContain("Helper \u00b7 re: \u201cping test\u201d");
+      expect(sent).toContain("Helper\nre: \u201cping test\u201d");
       expect(sent).toContain("Latency for this message:");
       expect(sent).toContain("detect");
       expect(sent).toContain("handle");
@@ -584,7 +587,7 @@ describe("turn lifecycle", () => {
       await h.coordinator.idle();
       expect(
         h.transport.sends.slice(firstTurnSends).map((send) => send.text).join("\n\n"),
-      ).toBe("Helper \u00b7 re: \u201cfind it again\u201d\nNo valid projects.");
+      ).toBe("Helper\nre: \u201cfind it again\u201d\nNo valid projects.");
       expect(h.workspaces.get(chatKeyForId(42, h.salt)).pendingCandidates).toEqual([]);
     } finally {
       h.close();
@@ -719,7 +722,7 @@ describe("turn lifecycle", () => {
       await h.coordinator.idle();
 
       expect(h.transport.sends).toEqual([
-        { chatId: 42, text: "Helper \u00b7 re: \u201cDraft the launch note.\u201d\nLaunch note ready." },
+        { chatId: 42, text: "Helper\nre: \u201cDraft the launch note.\u201d\nLaunch note ready." },
       ]);
       expect(h.journal.state("IN-1")).toBe("delivered");
       expect(h.memory.get(chatKeyForId(42, h.salt))).toEqual({
@@ -811,7 +814,7 @@ describe("turn lifecycle", () => {
       h.coordinator.admit(activation);
       await h.coordinator.idle();
       expect(h.transport.sends).toEqual([
-        { chatId: 42, text: `Helper \u00b7 re: \u201cDraft the launch note.\u201d\n${FAILURE_NOTICE}` },
+        { chatId: 42, text: `Helper\nre: \u201cDraft the launch note.\u201d\n${FAILURE_NOTICE}` },
       ]);
       expect(h.memory.get(chatKeyForId(42, h.salt)).exchanges).toEqual([]);
     } finally {
@@ -830,7 +833,7 @@ describe("turn lifecycle", () => {
       h.coordinator.admit(activation);
       await h.coordinator.idle();
       expect(h.transport.sends).toEqual([
-        { chatId: 42, text: `Helper \u00b7 re: \u201cDraft the launch note.\u201d\n${FAILURE_NOTICE}` },
+        { chatId: 42, text: `Helper\nre: \u201cDraft the launch note.\u201d\n${FAILURE_NOTICE}` },
       ]);
       expect(h.journal.state("IN-1")).toBe("delivered");
     } finally {
@@ -866,8 +869,8 @@ describe("turn lifecycle", () => {
       expect(primary.requests).toEqual(["first", "second"]);
       expect(primary.maxActive).toBe(1);
       expect(h.transport.sends.map((send) => send.text)).toEqual([
-        "Helper \u00b7 re: \u201cfirst request\u201d\nfirst reply",
-        "Helper \u00b7 re: \u201csecond request\u201d\nsecond reply",
+        "Helper\nre: \u201cfirst request\u201d\nfirst reply",
+        "Helper\nre: \u201csecond request\u201d\nsecond reply",
       ]);
     } finally {
       h.close();
@@ -898,7 +901,7 @@ describe("turn lifecycle", () => {
 
       expect(primary.inputs).toHaveLength(0);
       expect(h.transport.sends).toEqual([
-        { chatId: 42, text: "Plan \u00b7 re: \u201crecover me\u201d\nalready accepted" },
+        { chatId: 42, text: "Plan\nre: \u201crecover me\u201d\nalready accepted" },
       ]);
       expect(h.journal.state("IN-RECOVER")).toBe("delivered");
     } finally {

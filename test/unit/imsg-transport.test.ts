@@ -76,9 +76,6 @@ class FakeMessages implements ProntoMessages {
   ): ReturnType<ProntoMessages["materializeAttachment"]> {
     throw new Error("not used");
   }
-  async react(): Promise<boolean> {
-    return true;
-  }
 
   async search(): Promise<readonly never[]> {
     return [];

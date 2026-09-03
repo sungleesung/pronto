@@ -2,9 +2,9 @@ import { findTagRanges } from "../activation";
 import { plainTextFromMarkdown } from "./plain-text";
 
 /**
- * The Messages bridge sends plain text. Put the triggering tag on its own line
- * in the native Messages typeface so replies from different tags are easy to
- * distinguish without exposing Markdown punctuation.
+ * The Messages bridge sends plain text. The reply opens with three stacked lines:
+ * the tag's own name, the echoed request, then the answer. Separate lines rather than
+ * one run-on heading, so the eye can skip the first two and land on the reply.
  */
 export function formatImessageReplyText(
   activationTag: string,
@@ -14,6 +14,15 @@ export function formatImessageReplyText(
   const heading = replyHeading(activationTag, request);
   const body = plainTextFromMarkdown(replyText);
   return body === "" ? heading : `${heading}\n${body}`;
+}
+
+/**
+ * Sent as soon as a tagged request is picked up. A turn takes tens of seconds and
+ * nothing else in the chat says the message was seen, so this is the only signal
+ * until the answer lands.
+ */
+export function acknowledgementText(activationTag: string): string {
+  return `${displayName(activationTag)} - Working on that now`;
 }
 
 export function imessageReplyBodyCharacterLimit(
@@ -26,13 +35,14 @@ export function imessageReplyBodyCharacterLimit(
 
 const REQUEST_ECHO_CHARACTER_LIMIT = 40;
 
+function displayName(activationTag: string): string {
+  return titleCase(activationTag.startsWith("@") ? activationTag.slice(1) : activationTag);
+}
+
 function replyHeading(activationTag: string, request?: string): string {
-  const displayName = activationTag.startsWith("@")
-    ? activationTag.slice(1)
-    : activationTag;
-  const name = titleCase(displayName);
+  const name = displayName(activationTag);
   const echo = requestEcho(request, activationTag);
-  return echo === null ? name : `${name} \u00b7 re: ${echo}`;
+  return echo === null ? name : `${name}\nre: ${echo}`;
 }
 
 // Echoes the triggering request so a reply stays legible in a fast-moving chat.

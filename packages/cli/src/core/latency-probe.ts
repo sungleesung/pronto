@@ -48,7 +48,9 @@ export function formatLatencyReport(input: {
   const detect = input.occurredAt !== undefined && input.admittedAt !== undefined
     ? input.admittedAt - input.occurredAt
     : null;
-  // Our own queue and compose time, up to the moment this text was built.
+  // Our own queue and compose time, up to the moment this text was built. It cannot
+  // include the send: that is still ahead of us while these lines are being written.
+  // The "model half" figures below do include it, since those turns have settled.
   const handle = input.admittedAt !== undefined ? input.now - input.admittedAt : null;
   const total = input.occurredAt !== undefined ? input.now - input.occurredAt : null;
 
@@ -60,7 +62,11 @@ export function formatLatencyReport(input: {
   if (handle !== null) lines.push(`  handle   ${formatDuration(handle)}  queue to this reply`);
   if (total !== null) lines.push(`  total    ${formatDuration(total)}`);
 
-  lines.push("", "No model turn ran for this probe, so that is the transport floor.");
+  lines.push(
+    "",
+    "No model turn ran for this probe, so that is the transport floor.",
+    "handle stops when this text was composed; sending it adds a few seconds more.",
+  );
 
   const durations = input.recentTurnDurations;
   if (durations.length > 0) {
