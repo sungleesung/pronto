@@ -80,16 +80,16 @@ fi
 echo
 echo "Building signed app…"
 CORY_CODESIGN_IDENTITY="$app_identity" CorySetup/build.sh >/dev/null
-APP="$OUT/Cory Setup.app"
+APP="$OUT/Cory by Crate Systems.app"
 codesign --verify --strict --verbose=1 "$APP"
 
 echo "Building installer package…"
 pkgbuild --quiet --install-location /Applications --component "$APP" \
-  --identifier dev.pronto.corysetup --version "$VERSION" "$OUT/component.pkg"
+  --identifier net.trycrate.cory.setup --version "$VERSION" "$OUT/component.pkg"
 productbuild --quiet --package "$OUT/component.pkg" --sign "$pkg_identity" \
-  "$OUT/CorySetup-$VERSION.pkg"
+  "$OUT/Cory-$VERSION.pkg"
 rm -f "$OUT/component.pkg"
-PKG="$OUT/CorySetup-$VERSION.pkg"
+PKG="$OUT/Cory-$VERSION.pkg"
 
 echo "Notarizing (this takes a few minutes)…"
 xcrun notarytool submit "$PKG" --keychain-profile "$NOTARY_PROFILE" --wait

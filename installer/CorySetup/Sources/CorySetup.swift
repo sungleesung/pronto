@@ -56,8 +56,21 @@ final class Shell {
 
 @MainActor
 final class Model: ObservableObject {
-    @Published var step: Step = .welcome
-    @Published var trustAccepted = false
+    /// Granting Full Disk Access forces a relaunch — macOS only hands the permission to a
+    /// fresh process. So progress has to survive being quit, or the one unavoidable manual
+    /// step also throws away everything answered before it.
+    private let store = UserDefaults.standard
+    private enum Key {
+        static let step = "wizard.step"
+        static let trust = "wizard.trustAccepted"
+        static let access = "wizard.accessChoice"
+        static let own = "wizard.ownHandle"
+        static let extras = "wizard.extraHandles"
+        static let tag = "wizard.tag"
+    }
+
+    @Published var step: Step = .welcome { didSet { store.set(step.rawValue, forKey: Key.step) } }
+    @Published var trustAccepted = false { didSet { store.set(trustAccepted, forKey: Key.trust) } }
 
     @Published var claudePath: String?
     @Published var imsgPath: String?
@@ -66,13 +79,42 @@ final class Model: ObservableObject {
     @Published var hasFullDiskAccess = false
     private var accessTimer: Timer?
 
-    @Published var accessChoice: AccessChoice = .onlyMe
-    @Published var ownHandle = ""
-    @Published var extraHandles: [String] = [""]
+    @Published var accessChoice: AccessChoice = .onlyMe {
+        didSet { store.set(accessChoice.rawValue, forKey: Key.access) }
+    }
+    @Published var ownHandle = "" { didSet { store.set(ownHandle, forKey: Key.own) } }
+    @Published var extraHandles: [String] = [""] {
+        didSet { store.set(extraHandles, forKey: Key.extras) }
+    }
 
-    @Published var tag = "@cory"
+    @Published var tag = "@cory" { didSet { store.set(tag, forKey: Key.tag) } }
     @Published var installLog = ""
     @Published var installFailed = false
+
+    init() {
+        // Restore, but never resume into a finished install: a second run should set up
+        // again from a sensible place rather than claim to be done.
+        trustAccepted = store.bool(forKey: Key.trust)
+        if let raw = store.string(forKey: Key.access), let choice = AccessChoice(rawValue: raw) {
+            accessChoice = choice
+        }
+        ownHandle = store.string(forKey: Key.own) ?? ""
+        if let saved = store.stringArray(forKey: Key.extras), !saved.isEmpty { extraHandles = saved }
+        tag = store.string(forKey: Key.tag) ?? "@cory"
+
+        let savedStep = Step(rawValue: store.integer(forKey: Key.step)) ?? .welcome
+        // .installing is a transient state; resuming into it would show a stalled spinner.
+        step = (savedStep == .installing || savedStep == .done) ? .fullDiskAccess : savedStep
+        if step != .welcome { refreshFullDiskAccess() }
+    }
+
+    /// Called once setup succeeds, so the next launch starts clean rather than resuming
+    /// into a wizard that has already finished.
+    func clearSavedProgress() {
+        for key in [Key.step, Key.trust, Key.access, Key.own, Key.extras, Key.tag] {
+            store.removeObject(forKey: key)
+        }
+    }
 
     /// The pronto binary shipped inside this app, so nothing has to be installed first.
     var bundledPronto: String? {
@@ -171,7 +213,10 @@ final class Model: ObservableObject {
         let (code, out) = Shell.run(pronto, setupArguments)
         installLog += out
         installFailed = code != 0
-        if !installFailed { step = .done }
+        if !installFailed {
+            clearSavedProgress()
+            step = .done
+        }
     }
 }
 
@@ -237,7 +282,7 @@ struct Row: View {
 @main
 struct CorySetupApp: App {
     var body: some Scene {
-        WindowGroup("Set up Cory") { RootView() }
+        WindowGroup("Cory by Crate Systems") { RootView() }
             .windowResizability(.contentSize)
             .defaultSize(width: 620, height: 520)
     }
@@ -330,7 +375,7 @@ struct RootView: View {
                    heading: "Allow access to Messages",
                    blurb: "macOS will not let any app grant this for you, so this one step is manual. It takes about twenty seconds.") {
             VStack(alignment: .leading, spacing: 14) {
-                Text("1.  Press Open Settings below.\n2.  Find Full Disk Access.\n3.  Turn on Cory Setup in the list.\n\nThis screen continues by itself the moment it works.")
+                Text("1.  Press Open Settings below.\n2.  Find Full Disk Access.\n3.  Turn on Cory by Crate Systems in the list.\n\nmacOS may ask you to quit and reopen this app — that is normal, and it is the only way the permission takes effect. Your answers are saved, so reopening returns you to this step.")
                     .font(.system(size: 13.5))
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {

@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="build/Cory Setup.app"
+APP="build/Cory by Crate Systems.app"
 IDENTITY="${CORY_CODESIGN_IDENTITY:--}"
 
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -13,9 +13,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Cory Setup</string>
-  <key>CFBundleDisplayName</key><string>Cory Setup</string>
-  <key>CFBundleIdentifier</key><string>dev.pronto.corysetup</string>
+  <!-- CFBundleName drives the menu bar, where a long name is truncated;
+       CFBundleDisplayName is what Finder and the installer show. -->
+  <key>CFBundleName</key><string>Cory</string>
+  <key>CFBundleDisplayName</key><string>Cory by Crate Systems</string>
+  <key>CFBundleIdentifier</key><string>net.trycrate.cory.setup</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
