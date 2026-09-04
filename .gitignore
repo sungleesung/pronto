@@ -13,3 +13,4 @@ installer/CorySetup/Resources/imsg
 
 # Certificate signing requests and their private keys. Never commit these.
 installer/certs/
+installer/dist/

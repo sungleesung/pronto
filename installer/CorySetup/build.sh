@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 APP="build/Cory by Crate Systems.app"
 IDENTITY="${CORY_CODESIGN_IDENTITY:--}"
 
+# Only the app is rebuilt. Packages live in ../dist so that rebuilding the app
+# cannot delete one that is mid-notarization.
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cat > "$APP/Contents/Info.plist" <<PLIST

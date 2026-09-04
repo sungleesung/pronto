@@ -16,6 +16,7 @@ TEAM_ID="${CORY_TEAM_ID:-$(security find-identity -v -p codesigning 2>/dev/null 
 NOTARY_PROFILE="${CORY_NOTARY_PROFILE:-cory-notary}"
 VERSION="${CORY_VERSION:-1.0}"
 OUT="CorySetup/build"
+DIST="dist"
 
 app_identity=$(security find-identity -v -p codesigning 2>/dev/null \
   | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/' || true)
@@ -84,12 +85,13 @@ APP="$OUT/Cory by Crate Systems.app"
 codesign --verify --strict --verbose=1 "$APP"
 
 echo "Building installer package…"
+mkdir -p "$DIST"
 pkgbuild --quiet --install-location /Applications --component "$APP" \
-  --identifier net.trycrate.cory.setup --version "$VERSION" "$OUT/component.pkg"
-productbuild --quiet --package "$OUT/component.pkg" --sign "$pkg_identity" \
-  "$OUT/Cory-$VERSION.pkg"
-rm -f "$OUT/component.pkg"
-PKG="$OUT/Cory-$VERSION.pkg"
+  --identifier net.trycrate.cory.setup --version "$VERSION" "$DIST/component.pkg"
+productbuild --quiet --package "$DIST/component.pkg" --sign "$pkg_identity" \
+  "$DIST/Cory-$VERSION.pkg"
+rm -f "$DIST/component.pkg"
+PKG="$DIST/Cory-$VERSION.pkg"
 
 echo "Notarizing (this takes a few minutes)…"
 xcrun notarytool submit "$PKG" --keychain-profile "$NOTARY_PROFILE" --wait
