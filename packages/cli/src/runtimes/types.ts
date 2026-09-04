@@ -102,15 +102,17 @@ export function validateRuntimeOutput(value: unknown): RuntimeOutput | null {
     workspaceCandidates = output.workspaceCandidates.map((candidate) => candidate.trim());
     if (workspaceCandidates.some((candidate) => candidate.length === 0)) return null;
   }
+  // An unusable attachment path costs the attachment, never the answer. Rejecting the
+  // whole output threw away a perfectly good reply because one optional field was
+  // malformed — which is exactly what happened during setup's qualification probe, where
+  // a relative path failed the entire turn as "invalid-output".
+  //
+  // Relative paths are still never sent: they resolve against the provider's working
+  // directory rather than the turn's, so honouring one would attach the wrong file.
   let attachmentPath: string | undefined;
-  if (output.attachmentPath !== undefined && output.attachmentPath !== null) {
-    if (typeof output.attachmentPath !== "string") return null;
+  if (typeof output.attachmentPath === "string") {
     const candidate = output.attachmentPath.trim();
-    // Relative paths are rejected outright: the provider resolves them against its own
-    // cwd, not the turn's working directory, so a relative path is silently wrong.
-    if (candidate.length > 4_096) return null;
-    if (candidate.length > 0) {
-      if (!candidate.startsWith("/")) return null;
+    if (candidate.startsWith("/") && candidate.length <= 4_096) {
       attachmentPath = candidate;
     }
   }

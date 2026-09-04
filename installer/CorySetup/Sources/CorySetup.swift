@@ -160,6 +160,31 @@ final class Model: ObservableObject {
     @Published var agentHasAccess = false
     private var agentTimer: Timer?
 
+    /// Puts the agent at its final path so there is something to authorise.
+    ///
+    /// Setup rolls back when it stops at the permission gate, taking the installed binary
+    /// with it — so the path it just told the person to authorise does not exist by the
+    /// time they go looking. Placing the same bytes here is safe: setup reinstalls this
+    /// very file afterwards, and because it is signed with a stable identity the grant
+    /// survives being rewritten.
+    @discardableResult
+    func placeAgentBinary() -> Bool {
+        guard let bundled = bundledCory else { return false }
+        let destination = installedCoryPath
+        let directory = (destination as NSString).deletingLastPathComponent
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+            if fm.fileExists(atPath: destination) { try fm.removeItem(atPath: destination) }
+            try fm.copyItem(atPath: bundled, toPath: destination)
+            try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: destination)
+            return true
+        } catch {
+            installLog += "\nCould not place Cory at \(destination): \(error.localizedDescription)"
+            return false
+        }
+    }
+
     func refreshAgentAccess() {
         guard FileManager.default.isExecutableFile(atPath: installedCoryPath) else {
             agentHasAccess = false
@@ -559,7 +584,10 @@ struct RootView: View {
                 }
             }
         }
-        .onAppear { model.startPollingAgentAccess() }
+        .onAppear {
+            model.placeAgentBinary()
+            model.startPollingAgentAccess()
+        }
         .onDisappear { model.stopPollingAgentAccess() }
     }
 

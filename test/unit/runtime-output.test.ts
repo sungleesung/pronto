@@ -48,15 +48,18 @@ test("accepts an absolute attachment path and refuses anything else", () => {
     workspaceCandidates: null,
   })).toMatchObject({ attachmentPath: "/tmp/chart.png" });
 
-  // Relative paths resolve against the provider's cwd, not the turn's working
-  // directory, so accepting one would silently send the wrong file.
-  for (const attachmentPath of ["chart.png", "./chart.png", "../chart.png", "~/chart.png"]) {
-    expect(validateRuntimeOutput({
+  // A relative path is not sent — it resolves against the provider's working directory
+  // rather than the turn's — but it must not take the reply down with it.
+  for (const attachmentPath of ["chart.png", "./chart.png", "../chart.png", "~/chart.png", 42]) {
+    const output = validateRuntimeOutput({
       attachmentPath,
       reply: "Here it is.",
       summary: null,
       workspaceCandidates: null,
-    })).toBeNull();
+    });
+    expect(output).not.toBeNull();
+    expect(output!.reply).toBe("Here it is.");
+    expect(output!.attachmentPath).toBeUndefined();
   }
 
   // Absent and null both mean "no attachment", not a failure.
