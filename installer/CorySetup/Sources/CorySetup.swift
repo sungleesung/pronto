@@ -24,30 +24,78 @@ enum AccessChoice: String { case onlyMe, people, anyone }
 
 // MARK: - Shell
 
-@MainActor
-final class Shell {
-    /// Runs a command and returns (exitCode, combined output). Never throws: the wizard
-    /// shows failures as text rather than dying on them.
-    static func run(_ launchPath: String, _ args: [String], env: [String: String] = [:]) -> (Int32, String) {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: launchPath)
-        task.arguments = args
-        var environment = ProcessInfo.processInfo.environment
-        for (key, value) in env { environment[key] = value }
-        task.environment = environment
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        do { try task.run() } catch { return (127, "could not run \(launchPath)") }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        return (task.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+/// Every call here spawns a process and waits for it. Run on the main actor that freezes
+/// the window — `pronto setup` takes tens of seconds, which macOS reports as "application
+/// not responding". So the work happens off the main thread and only the result comes back.
+enum Shell {
+    static func run(
+        _ launchPath: String,
+        _ args: [String],
+        env: [String: String] = [:],
+    ) async -> (code: Int32, output: String) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: launchPath)
+                task.arguments = args
+                var environment = ProcessInfo.processInfo.environment
+                for (key, value) in env { environment[key] = value }
+                task.environment = environment
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                do { try task.run() } catch {
+                    continuation.resume(returning: (127, "could not run \(launchPath)"))
+                    return
+                }
+                // Read before waiting: a process that fills the pipe buffer blocks forever
+                // if nothing is draining it.
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                task.waitUntilExit()
+                continuation.resume(
+                    returning: (task.terminationStatus, String(data: data, encoding: .utf8) ?? ""))
+            }
+        }
     }
 
-    static func which(_ name: String) -> String? {
+    /// Same as `run`, but hands each chunk of output over as it arrives. Setup prints its
+    /// checks one line at a time over about a minute; showing them as they land is the
+    /// difference between visible progress and a spinner that looks stuck.
+    static func stream(
+        _ launchPath: String,
+        _ args: [String],
+        onOutput: @escaping @Sendable (String) -> Void,
+    ) async -> Int32 {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: launchPath)
+                task.arguments = args
+                task.environment = ProcessInfo.processInfo.environment
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                task.standardError = pipe
+                do { try task.run() } catch {
+                    onOutput("could not run \(launchPath)\n")
+                    continuation.resume(returning: 127)
+                    return
+                }
+                let handle = pipe.fileHandleForReading
+                while true {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break }
+                    if let text = String(data: chunk, encoding: .utf8) { onOutput(text) }
+                }
+                task.waitUntilExit()
+                continuation.resume(returning: task.terminationStatus)
+            }
+        }
+    }
+
+    static func which(_ name: String) async -> String? {
         let common = ["/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)", "/usr/bin/\(name)"]
         for path in common where FileManager.default.isExecutableFile(atPath: path) { return path }
-        let (code, out) = run("/usr/bin/env", ["which", name])
+        let (code, out) = await run("/usr/bin/env", ["which", name])
         let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
         return code == 0 && !trimmed.isEmpty ? trimmed : nil
     }
@@ -75,7 +123,9 @@ final class Model: ObservableObject {
 
     @Published var claudePath: String?
     @Published var imsgPath: String?
-    @Published var checking = false
+    /// True while a process is running. Drives the progress indicator and keeps the
+    /// buttons from being pressed twice.
+    @Published var busy = false
 
     @Published var hasFullDiskAccess = false
     private var accessTimer: Timer?
@@ -185,24 +235,24 @@ final class Model: ObservableObject {
         }
     }
 
-    func refreshAgentAccess() {
+    func refreshAgentAccess() async {
         guard FileManager.default.isExecutableFile(atPath: installedCoryPath) else {
             agentHasAccess = false
             return
         }
-        let (_, out) = Shell.run(installedCoryPath, ["doctor", "--offline"])
+        let (_, out) = await Shell.run(installedCoryPath, ["doctor", "--offline"])
         // Setup prints this whenever the agent still cannot reach Messages.
         agentHasAccess = !out.contains("grant Full Disk Access")
             && !out.lowercased().contains("full disk access")
     }
 
     func startPollingAgentAccess() {
-        refreshAgentAccess()
+        Task { await refreshAgentAccess() }
         agentTimer?.invalidate()
         agentTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.refreshAgentAccess()
+                await self.refreshAgentAccess()
                 if self.agentHasAccess { self.stopPollingAgentAccess() }
             }
         }
@@ -219,20 +269,20 @@ final class Model: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    func checkRequirements() {
-        checking = true
-        claudePath = Shell.which("claude")
-        imsgPath = Shell.which("imsg") ?? bundledResource("imsg")
-        checking = false
+    func checkRequirements() async {
+        busy = true
+        defer { busy = false }
+        claudePath = await Shell.which("claude")
+        imsgPath = await Shell.which("imsg") ?? bundledResource("imsg")
     }
 
     func bundledResource(_ name: String) -> String? {
         Bundle.main.url(forResource: name, withExtension: nil)?.path
     }
 
-    func detectOwnHandle() {
+    func detectOwnHandle() async {
         guard let imsg = imsgPath else { return }
-        let (code, out) = Shell.run(imsg, ["account", "--local", "--json"])
+        let (code, out) = await Shell.run(imsg, ["account", "--local", "--json"])
         guard code == 0, let data = out.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accounts = root["accounts"] as? [[String: Any]] else { return }
@@ -268,15 +318,20 @@ final class Model: ObservableObject {
         return args
     }
 
-    func install() {
-        guard let cory = bundledCory ?? Shell.which("cory") else {
+    func install() async {
+        busy = true
+        defer { busy = false }
+        guard let cory = bundledCory else {
             installLog = "Could not find the Cory program inside this app."
             installFailed = true
             return
         }
-        installLog = "Installing…\n"
-        let (code, out) = Shell.run(cory, setupArguments)
-        installLog += out
+        installLog = ""
+        var out = ""
+        let code = await Shell.stream(cory, setupArguments) { chunk in
+            Task { @MainActor in self.installLog += chunk }
+            out += chunk
+        }
         // Full Disk Access is granted per binary. This installer holding it is what let
         // setup's checks pass; the agent it just installed is a different binary and needs
         // its own grant before it can run on its own. Setup says so and stops, so treat
@@ -408,7 +463,11 @@ struct RootView: View {
                     Button("Back") { model.step = .welcome }
                     Spacer()
                     Button("Continue") {
-                        model.checkRequirements(); model.detectOwnHandle(); model.step = .requirements
+                        model.step = .requirements
+                        Task {
+                            await model.checkRequirements()
+                            await model.detectOwnHandle()
+                        }
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.trustAccepted)
@@ -422,6 +481,12 @@ struct RootView: View {
                    heading: "Check this Mac",
                    blurb: "Cory needs Claude to think with, and a small helper to read Messages.") {
             VStack(alignment: .leading, spacing: 14) {
+                if model.busy {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Checking…").font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    }
+                }
                 Row(ok: model.claudePath != nil,
                     label: model.claudePath != nil ? "Claude is installed" : "Claude is not installed",
                     detail: model.claudePath ?? "Install Claude Code, then press Check again.")
@@ -435,11 +500,14 @@ struct RootView: View {
                 Spacer()
                 HStack {
                     Button("Back") { model.step = .trust }
-                    Button("Check again") { model.checkRequirements(); model.detectOwnHandle() }
+                    Button("Check again") {
+                        Task { await model.checkRequirements(); await model.detectOwnHandle() }
+                    }
+                    .disabled(model.busy)
                     Spacer()
                     Button("Continue") { model.refreshFullDiskAccess(); model.step = .fullDiskAccess }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(model.claudePath == nil || model.imsgPath == nil)
+                        .disabled(model.busy || model.claudePath == nil || model.imsgPath == nil)
                 }
             }
         }
@@ -518,8 +586,11 @@ struct RootView: View {
                 HStack {
                     Button("Back") { model.step = .fullDiskAccess }
                     Spacer()
-                    Button("Install") { model.step = .installing; model.install() }
-                        .keyboardShortcut(.defaultAction)
+                    Button("Install") {
+                        model.step = .installing
+                        Task { await model.install() }
+                    }
+                    .keyboardShortcut(.defaultAction)
                 }
             }
         }
@@ -528,19 +599,33 @@ struct RootView: View {
     private var installing: some View {
         StepChrome(model: model, heading: "Setting up", blurb: "This takes a few seconds.") {
             VStack(alignment: .leading, spacing: 12) {
-                if !model.installFailed { ProgressView().controlSize(.small) }
-                ScrollView {
-                    Text(model.installLog.isEmpty ? "Working…" : model.installLog)
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                if !model.installFailed {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("This usually takes under a minute.")
+                            .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    }
                 }
-                .frame(height: 220)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Text(model.installLog.isEmpty ? "Starting…" : model.installLog)
+                            .font(.system(size: 11.5, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .id("log")
+                    }
+                    .frame(height: 200)
+                    // The single-argument form, so this still builds for macOS 13.
+                    .onChange(of: model.installLog) { _ in
+                        proxy.scrollTo("log", anchor: .bottom)
+                    }
+                }
                 if model.installFailed {
                     HStack {
                         Button("Back") { model.installFailed = false; model.step = .access }
                         Spacer()
-                        Button("Try again") { model.install() }
+                        Button("Try again") { Task { await model.install() } }
+                            .disabled(model.busy)
                     }
                 }
             }
@@ -578,9 +663,12 @@ struct RootView: View {
                 Spacer()
                 HStack {
                     Spacer()
-                    Button("Finish setup") { model.step = .installing; model.install() }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!model.agentHasAccess)
+                    Button("Finish setup") {
+                        model.step = .installing
+                        Task { await model.install() }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.busy || !model.agentHasAccess)
                 }
             }
         }
