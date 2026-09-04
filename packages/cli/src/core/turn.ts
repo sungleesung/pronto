@@ -11,6 +11,7 @@ import type { ChainedRuntimeResult, RuntimeChain } from "../runtimes/chain";
 import type { RuntimeInput } from "../runtimes/types";
 import { formatLatencyReport, isLatencyProbe } from "./latency-probe";
 import { splitReplyText } from "../imessage/split-reply";
+import { deniedToolsFor } from "../guest-tools";
 import { chatKeyForId } from "../storage/chat-key";
 import type { DeliveryJournal, QueuedEvent } from "../storage/journal";
 import type { MemoryStore } from "../storage/memory";
@@ -315,6 +316,9 @@ export class TurnProcessor {
         for (const token of capabilities) this.dependencies.broker.revoke(token);
         capabilities.clear();
       };
+      // Absent from_me means a row written before this existed. Treat it as a guest:
+      // the safe reading of "unknown sender" is not "give it the shell".
+      const deniedTools = deniedToolsFor({ fromMe: event.fromMe ?? false });
       const inputForAttempt = (): RuntimeInput => {
         const { token } = this.dependencies.broker.issue(event.chatId);
         capabilities.add(token);
@@ -322,6 +326,7 @@ export class TurnProcessor {
           bridgeExecutablePath: this.dependencies.bridgeExecutablePath,
           brokerUrl: this.dependencies.brokerUrl,
           capability: token,
+          ...(deniedTools.length === 0 ? {} : { deniedTools }),
           prompt,
           workingDirectory: activeDirectory,
         };
@@ -540,6 +545,7 @@ export class TurnCoordinator {
       chatId: request.chatId,
       chatKey,
       conversation: request.conversation,
+      fromMe: request.isFromMe,
       ...(Number.isFinite(occurredAt) ? { occurredAt } : {}),
       providerGuid: request.providerGuid,
       request: text,

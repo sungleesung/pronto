@@ -13,6 +13,8 @@ export interface RuntimeOutput {
 
 export interface RuntimeInput {
   bridgeExecutableArgs?: readonly string[];
+  /** Tools withheld for this turn. Empty for the owner, so their invocation is unchanged. */
+  deniedTools?: readonly string[];
   bridgeExecutablePath: string;
   brokerUrl: string;
   capability: string;

@@ -175,6 +175,32 @@ async function harness(
 }
 
 describe("turn lifecycle", () => {
+  test("a guest's turn withholds the shell and filesystem; the owner's does not", async () => {
+    const primary = new FakeAdapter("codex", {
+      output: { reply: "ok" },
+      status: "success",
+      toolActivity: "none",
+    });
+    const h = await harness(primary);
+    try {
+      h.coordinator.admit({
+        ...activation, isFromMe: false, providerGuid: "IN-GUEST", request: "check the shared folder",
+      });
+      await h.coordinator.idle();
+      const guest = primary.inputs[0]!.deniedTools ?? [];
+      for (const tool of ["Bash", "Read", "Write", "Edit"]) expect(guest).toContain(tool);
+
+      h.coordinator.admit({
+        ...activation, isFromMe: true, providerGuid: "IN-OWNER", request: "check the shared folder",
+      });
+      await h.coordinator.idle();
+      // Nothing withheld, and no flag passed at all, so the owner's invocation is unchanged.
+      expect(primary.inputs[1]!.deniedTools).toBeUndefined();
+    } finally {
+      h.close();
+    }
+  });
+
   test("a queued request is told how many are ahead of it", async () => {
     const primary = new OrderedAdapter();
     const h = await harness(primary);

@@ -25,6 +25,8 @@ export interface AdmissionInput {
   chatId: number;
   chatKey: string;
   conversation?: ConversationReference;
+  /** Whether the owner sent it. Guests are given a smaller set of tools. */
+  fromMe?: boolean;
   /** Epoch ms when Messages recorded the triggering message, when the provider reported it. */
   occurredAt?: number;
   providerGuid: string;
@@ -111,8 +113,8 @@ export class DeliveryJournal {
         .query(
           `INSERT INTO delivery_events
            (provider_guid, chat_key, chat_id, conversation_reference, activation_tag,
-            tagged_request, state, created_at, updated_at, occurred_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            tagged_request, state, created_at, updated_at, occurred_at, from_me)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.providerGuid,
@@ -127,6 +129,7 @@ export class DeliveryJournal {
           now,
           now,
           input.occurredAt ?? null,
+          input.fromMe === undefined ? null : input.fromMe ? 1 : 0,
         );
       return { status: rateLimited ? ("rate-limited" as const) : ("accepted" as const) };
     })();
@@ -157,7 +160,7 @@ export class DeliveryJournal {
       .query(
         `SELECT provider_guid, chat_key, chat_id, conversation_reference, activation_tag,
                 tagged_request, state, accepted_reply, lease_token, created_at, occurred_at,
-                attachment_path
+                attachment_path, from_me
          FROM delivery_events
          WHERE state IN ('admitted', 'ready_to_send') AND tagged_request IS NOT NULL
                ${exclusion}
@@ -178,6 +181,7 @@ export class DeliveryJournal {
           created_at: number;
           occurred_at: number | null;
           attachment_path: string | null;
+          from_me: number | null;
         }
       | null;
     if (row === null) return null;
@@ -186,6 +190,7 @@ export class DeliveryJournal {
       chatId: row.chat_id,
       chatKey: row.chat_key,
       ...(row.occurred_at === null ? {} : { occurredAt: row.occurred_at }),
+      ...(row.from_me === null ? {} : { fromMe: row.from_me === 1 }),
       ...(row.conversation_reference === null
         ? {}
         : { conversation: parseConversationReference(row.conversation_reference, row.chat_id) }),
