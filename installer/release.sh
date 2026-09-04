@@ -35,7 +35,7 @@ if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1
 else
   say "Notary credentials ($NOTARY_PROFILE)" "MISSING"; missing=1
 fi
-for b in CorySetup/Resources/pronto CorySetup/Resources/imsg; do
+for b in CorySetup/Resources/cory CorySetup/Resources/imsg; do
   if [ -f "$b" ]; then say "$(basename "$b") staged" "found"; else
     say "$(basename "$b") staged" "MISSING"; missing=1; fi
 done
@@ -72,7 +72,7 @@ Not ready yet. To fix:
                 portal's top-right membership details — not whichever Apple ID this Mac
                 happens to be signed into.
 
-  Binaries      cp "$HOME/Library/Application Support/pronto/bin/pronto" CorySetup/Resources/
+  Binaries      cp "$HOME/Library/Application Support/cory/bin/cory" CorySetup/Resources/
                 cp /opt/homebrew/bin/imsg CorySetup/Resources/
 HELP
   exit 1

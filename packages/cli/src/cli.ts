@@ -124,7 +124,7 @@ async function runSetup(argv: readonly string[] = []): Promise<number> {
             .trim()
             .toLowerCase() === "y";
 
-    const defaultWorkspace = existing?.workingDirectory ?? join(homedir(), "pronto");
+    const defaultWorkspace = existing?.workingDirectory ?? join(homedir(), "Cory");
     let workspacePrompt = `Default working folder [${defaultWorkspace}]: `;
     let workspaceFallback = defaultWorkspace;
     let preAnswered = options.workingDirectory;
@@ -244,7 +244,14 @@ async function runSetup(argv: readonly string[] = []): Promise<number> {
       },
       qualify: async () => {
         console.log(fullDiskAccessInstructions(paths.executablePath));
-        await prompt.question("After granting access, press Enter to qualify the installed Pronto executable: ");
+        // An installer has no stdin to press Enter on, and asking anyway threw
+        // ERR_USE_AFTER_CLOSE after everything else had already succeeded. When the
+        // caller answered the prompts up front it is also expected to have arranged
+        // Full Disk Access for this path already, so qualification runs straight away
+        // and speaks for itself if it has not.
+        if (!options.acceptTrust) {
+          await prompt.question("After granting access, press Enter to qualify the installed Pronto executable: ");
+        }
         await qualifyInstalledExecutable(paths.executablePath, runCommand, async () => {
           const state = await launchAgentStateForLabel({ label: LAUNCH_AGENT_LABEL });
           if (state === "stopped") return async () => undefined;

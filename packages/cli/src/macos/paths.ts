@@ -1,7 +1,12 @@
 import { join } from "node:path";
 
-export const LAUNCH_AGENT_LABEL = "dev.pronto.agent";
-export const LEGACY_LAUNCH_AGENT_LABEL = "dev.s4imsg.agent";
+export const LAUNCH_AGENT_LABEL = "net.trycrate.cory.agent";
+/**
+ * Earlier install identities, still recognised so an existing setup can be migrated
+ * rather than stranded beside the new one.
+ */
+export const LEGACY_LAUNCH_AGENT_LABEL = "dev.pronto.agent";
+export const OLDEST_LAUNCH_AGENT_LABEL = "dev.s4imsg.agent";
 
 export interface ProntoPaths {
   appSupportDirectory: string;
@@ -46,18 +51,18 @@ function productPathsForHome(input: {
 
 export function pathsForHome(homeDirectory: string): ProntoPaths {
   return productPathsForHome({
-    executable: "pronto",
+    executable: "cory",
     homeDirectory,
     label: LAUNCH_AGENT_LABEL,
-    product: "pronto",
+    product: "cory",
   });
 }
 
 export function legacyPathsForHome(homeDirectory: string): ProntoPaths {
   return productPathsForHome({
-    executable: "s4imsg",
+    executable: "pronto",
     homeDirectory,
     label: LEGACY_LAUNCH_AGENT_LABEL,
-    product: "s4imsg",
+    product: "pronto",
   });
 }

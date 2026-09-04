@@ -33,7 +33,7 @@ describe("setup discovery", () => {
   test("gives copy-safe post-install verification steps after qualification", () => {
     const message = setupCompletionMessage(
       {
-        executablePath: "/Users/example/Library/Application Support/pronto/bin/pronto",
+        executablePath: "/Users/example/Library/Application Support/cory/bin/cory",
       },
       ["@helper", "@plan"],
     );
@@ -41,7 +41,7 @@ describe("setup discovery", () => {
     expect(message).toContain("Pronto installed and qualified");
     expect(message).not.toContain("Full Disk Access");
     expect(message).toContain(
-      "'/Users/example/Library/Application Support/pronto/bin/pronto' status",
+      "'/Users/example/Library/Application Support/cory/bin/cory' status",
     );
     expect(message).toContain("@helper ping");
     expect(message).toContain("iMessage or RCS chat");
@@ -51,22 +51,22 @@ describe("setup discovery", () => {
 
   test("shell-quotes an installed status command containing an apostrophe", () => {
     const message = setupCompletionMessage(
-      { executablePath: "/Users/O'Neil/Library/Application Support/pronto/bin/pronto" },
+      { executablePath: "/Users/O'Neil/Library/Application Support/cory/bin/cory" },
       ["@helper"],
     );
 
     expect(message).toContain(
-      "'/Users/O'\\''Neil/Library/Application Support/pronto/bin/pronto' status",
+      "'/Users/O'\\''Neil/Library/Application Support/cory/bin/cory' status",
     );
   });
 
   test("explains how to refresh Full Disk Access after replacing the executable", () => {
     const message = fullDiskAccessInstructions(
-      "/Users/example/Library/Application Support/pronto/bin/pronto",
+      "/Users/example/Library/Application Support/cory/bin/cory",
     );
 
     expect(message).toContain(
-      "/Users/example/Library/Application Support/pronto/bin/pronto",
+      "/Users/example/Library/Application Support/cory/bin/cory",
     );
     expect(message).toContain("remove the existing pronto row");
     expect(message).toContain("add this exact file again");
@@ -669,7 +669,7 @@ test("installed qualification runs doctor through the exact installed executable
   const calls: Array<{ executable: string; args: readonly string[] }> = [];
 
   await qualifyInstalledExecutable(
-    "/Users/example/Library/Application Support/pronto/bin/pronto",
+    "/Users/example/Library/Application Support/cory/bin/cory",
     async (executable, args) => {
       calls.push({ executable, args });
       return { exitCode: 0, stderr: "", stdout: "ok" };
@@ -678,11 +678,11 @@ test("installed qualification runs doctor through the exact installed executable
 
   expect(calls).toEqual([
     {
-      executable: "/Users/example/Library/Application Support/pronto/bin/pronto",
+      executable: "/Users/example/Library/Application Support/cory/bin/cory",
       args: ["doctor", "--offline"],
     },
     {
-      executable: "/Users/example/Library/Application Support/pronto/bin/pronto",
+      executable: "/Users/example/Library/Application Support/cory/bin/cory",
       args: ["status"],
     },
   ]);
@@ -693,7 +693,7 @@ test("installed qualification suspends the daemon while doctor owns the Messages
   let listenerRunning = true;
 
   await qualifyInstalledExecutable(
-    "/Users/example/Library/Application Support/pronto/bin/pronto",
+    "/Users/example/Library/Application Support/cory/bin/cory",
     async (_executable, args) => {
       if (args[0] === "doctor") {
         expect(listenerRunning).toBeFalse();
@@ -727,7 +727,7 @@ test("installed qualification waits for the restored daemon to become ready", as
   let statusAttempts = 0;
 
   await qualifyInstalledExecutable(
-    "/Users/example/Library/Application Support/pronto/bin/pronto",
+    "/Users/example/Library/Application Support/cory/bin/cory",
     async (_executable, args) => {
       if (args[0] === "doctor") {
         return { exitCode: 0, stderr: "", stdout: "ok" };
@@ -749,7 +749,7 @@ test("installed qualification fails closed when the restored daemon never become
   let waits = 0;
 
   await expect(qualifyInstalledExecutable(
-    "/Users/example/Library/Application Support/pronto/bin/pronto",
+    "/Users/example/Library/Application Support/cory/bin/cory",
     async (_executable, args) => {
       if (args[0] === "doctor") {
         return { exitCode: 0, stderr: "", stdout: "ok" };
@@ -771,7 +771,7 @@ test("installed qualification restores the suspended daemon after offline doctor
   const lifecycle: string[] = [];
 
   await expect(qualifyInstalledExecutable(
-    "/Users/example/Library/Application Support/pronto/bin/pronto",
+    "/Users/example/Library/Application Support/cory/bin/cory",
     async (_executable, args) => {
       lifecycle.push(args.join(" "));
       return { exitCode: 1, stderr: "qualification failed", stdout: "" };

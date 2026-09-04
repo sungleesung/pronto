@@ -33,7 +33,7 @@ capability scoping rather than an operating-system sandbox. The MCP surface is
 read-only and cannot send, react, vote, edit, unsend, or select another chat.
 This boundary does not restrict the runtime's other locally configured tools.
 
-Private state is stored below `~/Library/Application Support/pronto` with
+Private state is stored below `~/Library/Application Support/cory` with
 owner-only permissions. The database retains at most eight confirmed tagged
 request/reply exchanges and one compact summary per chat. It does not archive
 ordinary messages, participant rosters, attachment metadata, attachment bytes,

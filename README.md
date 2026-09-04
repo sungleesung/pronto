@@ -92,8 +92,8 @@ project without a path, the agent can offer numbered directory choices; reply wi
 a number in the next tagged message to confirm one.
 
 After qualification, setup compiles a stable executable under
-`~/Library/Application Support/pronto/`, writes an owner-only configuration, and
-installs the `dev.pronto.agent` user LaunchAgent. It asks the owner to grant Full
+`~/Library/Application Support/cory/`, writes an owner-only configuration, and
+installs the `net.trycrate.cory.agent` user LaunchAgent. It asks the owner to grant Full
 Disk Access to that exact installed executable, verifies the installed identity,
 and reports success only after the new listener is healthy.
 
@@ -111,7 +111,7 @@ In System Settings → Privacy & Security:
 After installation, run:
 
 ```sh
-PRONTO="$HOME/Library/Application Support/pronto/bin/pronto"
+PRONTO="$HOME/Library/Application Support/cory/bin/cory"
 "$PRONTO" doctor
 "$PRONTO" status
 ```
@@ -152,7 +152,7 @@ attachment metadata, and tool results are not archived by `pronto`.
 ## Operations
 
 ```sh
-PRONTO="$HOME/Library/Application Support/pronto/bin/pronto"
+PRONTO="$HOME/Library/Application Support/cory/bin/cory"
 "$PRONTO" status
 "$PRONTO" status --chats
 "$PRONTO" doctor
@@ -208,15 +208,15 @@ exact installed executable again, and enable it. Press Command-Shift-G in the
 file picker and paste:
 
 ```text
-~/Library/Application Support/pronto/bin/pronto
+~/Library/Application Support/cory/bin/cory
 ```
 
 Then restart and check the service:
 
 ```sh
-/bin/launchctl kickstart -k "gui/$(id -u)/dev.pronto.agent"
+/bin/launchctl kickstart -k "gui/$(id -u)/net.trycrate.cory.agent"
 sleep 3
-"$HOME/Library/Application Support/pronto/bin/pronto" status
+"$HOME/Library/Application Support/cory/bin/cory" status
 ```
 
 ### No reply arrives
@@ -226,7 +226,7 @@ sleep 3
 - Run `doctor` and resolve every failed check; degraded
   `messages-send-automation` is expected until the first real send.
 - Open Messages once and approve its Automation prompt if macOS presents one.
-- Check `~/Library/Logs/pronto/daemon.log`; logs contain operational states, not
+- Check `~/Library/Logs/cory/daemon.log`; logs contain operational states, not
   conversation content.
 
 ### A self-chat appears duplicated

@@ -90,7 +90,7 @@ Work interactively and stay with me until one tagged iMessage or RCS message get
 4. When setup finishes, guide me to **System Settings → Privacy & Security → Full Disk Access**. I must add and enable this exact installed executable:
 
    ```text
-   ~/Library/Application Support/pronto/bin/pronto
+   ~/Library/Application Support/cory/bin/cory
    ```
 
    If a stale pronto entry already exists, have me remove it and add the exact file again. Messages may also ask me to approve Automation on the first real reply.
@@ -98,7 +98,7 @@ Work interactively and stay with me until one tagged iMessage or RCS message get
 5. Run the installed diagnostics with a safely quoted path and wait for the runtime probes to finish:
 
    ```sh
-   PRONTO="$HOME/Library/Application Support/pronto/bin/pronto"
+   PRONTO="$HOME/Library/Application Support/cory/bin/cory"
    "$PRONTO" doctor
    "$PRONTO" status
    ```
@@ -108,7 +108,7 @@ Work interactively and stay with me until one tagged iMessage or RCS message get
 6. Show me how to manage tags from the installed CLI:
 
    ```sh
-   PRONTO="$HOME/Library/Application Support/pronto/bin/pronto"
+   PRONTO="$HOME/Library/Application Support/cory/bin/cory"
    "$PRONTO" tags
    "$PRONTO" tags add @plan
    "$PRONTO" tags remove @plan
@@ -119,7 +119,7 @@ Work interactively and stay with me until one tagged iMessage or RCS message get
 7. Run the final status check with its executable assigned in the same shell call:
 
    ```sh
-   PRONTO="$HOME/Library/Application Support/pronto/bin/pronto"
+   PRONTO="$HOME/Library/Application Support/cory/bin/cory"
    "$PRONTO" status
    ```
 

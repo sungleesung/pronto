@@ -38,7 +38,7 @@ swiftc -O -parse-as-library \
 # Ship the agent and the Messages helper inside the bundle. Without these the wizard
 # would be asking a non-technical user to install Homebrew first, which is the whole
 # problem it exists to remove.
-for name in pronto imsg; do
+for name in cory imsg; do
   if [ -f "Resources/$name" ]; then
     cp "Resources/$name" "$APP/Contents/Resources/$name"
     # 755, not the 700 an installed pronto carries: a package payload has to be readable
@@ -59,7 +59,7 @@ else
   SIGN_EXTRA=(--options runtime --timestamp --entitlements entitlements.plist)
 fi
 
-for name in pronto imsg; do
+for name in cory imsg; do
   [ -f "$APP/Contents/Resources/$name" ] && \
     codesign --force --sign "$IDENTITY" "${SIGN_EXTRA[@]}" "$APP/Contents/Resources/$name" || true
 done

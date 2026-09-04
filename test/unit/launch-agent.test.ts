@@ -23,7 +23,7 @@ afterEach(async () => {
 
 test("renders a stable owner LaunchAgent without shell interpolation", () => {
   const plist = renderLaunchAgent({
-    executablePath: "/Users/me/Application Support/pronto/bin/pronto",
+    executablePath: "/Users/me/Application Support/cory/bin/cory",
     logPath: "/Users/me/Logs/pronto/agent & output.log",
     runtimeExecutablePaths: [
       "/opt/homebrew/bin/codex",
@@ -32,7 +32,7 @@ test("renders a stable owner LaunchAgent without shell interpolation", () => {
     ],
   });
 
-  expect(plist).toContain("dev.pronto.agent");
+  expect(plist).toContain("net.trycrate.cory.agent");
   expect(plist).toContain("<string>run</string>");
   expect(plist).toContain("agent &amp; output.log");
   expect(plist).toContain(
@@ -63,18 +63,18 @@ test("restarts the stable listener after a tag change", async () => {
   }, 501);
 
   expect(result.exitCode).toBe(0);
-  expect(calls).toEqual([["kickstart", "-k", "gui/501/dev.pronto.agent"]]);
+  expect(calls).toEqual([["kickstart", "-k", "gui/501/net.trycrate.cory.agent"]]);
 });
 
 test("removes the legacy service by its legacy label", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pronto-legacy-agent-"));
   temporaryDirectories.push(directory);
-  const plistPath = join(directory, "dev.s4imsg.agent.plist");
+  const plistPath = join(directory, "dev.pronto.agent.plist");
   await Bun.write(plistPath, "legacy plist");
   const calls: string[][] = [];
 
   await removeLaunchAgentForLabel({
-    label: "dev.s4imsg.agent",
+    label: "dev.pronto.agent",
     plistPath,
     runner: async (args) => {
       calls.push([...args]);
@@ -86,8 +86,8 @@ test("removes the legacy service by its legacy label", async () => {
   });
 
   expect(calls).toEqual([
-    ["bootout", "gui/501/dev.s4imsg.agent"],
-    ["print", "gui/501/dev.s4imsg.agent"],
+    ["bootout", "gui/501/dev.pronto.agent"],
+    ["print", "gui/501/dev.pronto.agent"],
   ]);
   await expect(readFile(plistPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 });
@@ -95,11 +95,11 @@ test("removes the legacy service by its legacy label", async () => {
 test("refuses to remove a legacy plist while its service is still running", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pronto-legacy-agent-"));
   temporaryDirectories.push(directory);
-  const plistPath = join(directory, "dev.s4imsg.agent.plist");
+  const plistPath = join(directory, "dev.pronto.agent.plist");
   await Bun.write(plistPath, "legacy plist");
 
   await expect(removeLaunchAgentForLabel({
-    label: "dev.s4imsg.agent",
+    label: "dev.pronto.agent",
     plistPath,
     runner: async (args) => args[0] === "bootout"
       ? { exitCode: 1, stderr: "bootout failed", stdout: "" }
@@ -115,8 +115,8 @@ test("restores a retained legacy service definition after a failed cutover", asy
   const calls: string[][] = [];
 
   await restoreLaunchAgentForLabel({
-    label: "dev.s4imsg.agent",
-    plistPath: "/tmp/dev.s4imsg.agent.plist",
+    label: "dev.pronto.agent",
+    plistPath: "/tmp/dev.pronto.agent.plist",
     runner: async (args) => {
       calls.push([...args]);
       return { exitCode: 0, stderr: "", stdout: "" };
@@ -125,8 +125,8 @@ test("restores a retained legacy service definition after a failed cutover", asy
   });
 
   expect(calls).toEqual([
-    ["bootstrap", "gui/501", "/tmp/dev.s4imsg.agent.plist"],
-    ["kickstart", "-k", "gui/501/dev.s4imsg.agent"],
+    ["bootstrap", "gui/501", "/tmp/dev.pronto.agent.plist"],
+    ["kickstart", "-k", "gui/501/dev.pronto.agent"],
   ]);
 });
 
@@ -134,7 +134,7 @@ test("treats bootout as complete only after launchd can no longer print the serv
   let prints = 0;
 
   await stopLaunchAgentForLabel({
-    label: "dev.s4imsg.agent",
+    label: "net.trycrate.cory.agent",
     runner: async (args) => {
       if (args[0] === "print") {
         prints += 1;
@@ -154,7 +154,7 @@ test("treats bootout as complete only after launchd can no longer print the serv
 test("installs and bootstraps one LaunchAgent", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pronto-agent-"));
   temporaryDirectories.push(directory);
-  const plistPath = join(directory, "dev.pronto.agent.plist");
+  const plistPath = join(directory, "net.trycrate.cory.agent.plist");
   const calls: string[][] = [];
   const runner: LaunchctlRunner = async (args) => {
     calls.push([...args]);
@@ -174,17 +174,17 @@ test("installs and bootstraps one LaunchAgent", async () => {
 
   expect(await readFile(plistPath, "utf8")).toContain("<plist>");
   expect(calls).toEqual([
-    ["bootout", "gui/501/dev.pronto.agent"],
-    ["print", "gui/501/dev.pronto.agent"],
+    ["bootout", "gui/501/net.trycrate.cory.agent"],
+    ["print", "gui/501/net.trycrate.cory.agent"],
     ["bootstrap", "gui/501", plistPath],
-    ["kickstart", "-k", "gui/501/dev.pronto.agent"],
+    ["kickstart", "-k", "gui/501/net.trycrate.cory.agent"],
   ]);
 });
 
 test("waits for a LaunchAgent to disappear even when bootout reports in progress", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pronto-agent-"));
   temporaryDirectories.push(directory);
-  const plistPath = join(directory, "dev.pronto.agent.plist");
+  const plistPath = join(directory, "net.trycrate.cory.agent.plist");
   const calls: string[][] = [];
   const waits: number[] = [];
   let printCalls = 0;
@@ -215,12 +215,12 @@ test("waits for a LaunchAgent to disappear even when bootout reports in progress
   });
 
   expect(calls).toEqual([
-    ["bootout", "gui/501/dev.pronto.agent"],
-    ["print", "gui/501/dev.pronto.agent"],
-    ["print", "gui/501/dev.pronto.agent"],
-    ["print", "gui/501/dev.pronto.agent"],
+    ["bootout", "gui/501/net.trycrate.cory.agent"],
+    ["print", "gui/501/net.trycrate.cory.agent"],
+    ["print", "gui/501/net.trycrate.cory.agent"],
+    ["print", "gui/501/net.trycrate.cory.agent"],
     ["bootstrap", "gui/501", plistPath],
-    ["kickstart", "-k", "gui/501/dev.pronto.agent"],
+    ["kickstart", "-k", "gui/501/net.trycrate.cory.agent"],
   ]);
   expect(waits).toEqual([100, 100]);
 });
@@ -228,7 +228,7 @@ test("waits for a LaunchAgent to disappear even when bootout reports in progress
 test("keeps the replacement plist and does not bootstrap when bootout times out", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pronto-agent-"));
   temporaryDirectories.push(directory);
-  const plistPath = join(directory, "dev.pronto.agent.plist");
+  const plistPath = join(directory, "net.trycrate.cory.agent.plist");
   const calls: string[][] = [];
   const waits: number[] = [];
   const runner: LaunchctlRunner = async (args) => {
@@ -259,7 +259,7 @@ test("keeps the replacement plist and does not bootstrap when bootout times out"
 test("removes a partial plist when launchd bootstrap fails", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pronto-agent-"));
   temporaryDirectories.push(directory);
-  const plistPath = join(directory, "dev.pronto.agent.plist");
+  const plistPath = join(directory, "net.trycrate.cory.agent.plist");
 
   await expect(
     installLaunchAgent({

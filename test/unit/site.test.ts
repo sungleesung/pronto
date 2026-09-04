@@ -550,7 +550,7 @@ describe("public landing page", () => {
     const finalStep = setup.slice(setup.indexOf("7. "));
 
     expect(finalStep).toContain(
-      'PRONTO="$HOME/Library/Application Support/pronto/bin/pronto"\n   "$PRONTO" status',
+      'PRONTO="$HOME/Library/Application Support/cory/bin/cory"\n   "$PRONTO" status',
     );
   });
 });

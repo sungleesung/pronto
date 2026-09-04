@@ -604,7 +604,7 @@ export function sourceBuild(repositoryRoot: string): (outputPath: string) => Pro
       "--sign",
       signingIdentity,
       "--identifier",
-      "dev.pronto.cli",
+      "net.trycrate.cory",
       outputPath,
     ]);
     if (signature.exitCode !== 0) {

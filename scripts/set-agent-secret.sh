@@ -7,7 +7,7 @@
 #   scripts/set-agent-secret.sh HF_API_KEY HF_SECRET
 set -euo pipefail
 
-PLIST="$HOME/Library/LaunchAgents/dev.pronto.agent.plist"
+PLIST="$HOME/Library/LaunchAgents/net.trycrate.cory.agent.plist"
 [ -f "$PLIST" ] || { echo "No LaunchAgent at $PLIST"; exit 1; }
 [ $# -ge 1 ] || { echo "Usage: $0 NAME [NAME...]"; exit 1; }
 
@@ -30,14 +30,14 @@ plutil -lint "$PLIST" >/dev/null
 
 # launchctl kickstart restarts the job but does NOT re-read the plist, so a changed
 # environment is silently ignored. Only a full bootout/bootstrap picks it up.
-launchctl bootout "gui/$(id -u)/dev.pronto.agent" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/net.trycrate.cory.agent" 2>/dev/null || true
 sleep 2
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 sleep 5
 
 echo
 echo "Environment now carries:"
-launchctl print "gui/$(id -u)/dev.pronto.agent" 2>/dev/null \
+launchctl print "gui/$(id -u)/net.trycrate.cory.agent" 2>/dev/null \
   | sed -n '/^\tenvironment = {/,/}/p' | grep -oE '^\s+[A-Za-z_]+ =>' | tr -d ' =>' | sed 's/^/  /'
 echo
-"$HOME/Library/Application Support/pronto/bin/pronto" status | head -3
+"$HOME/Library/Application Support/cory/bin/cory" status | head -3

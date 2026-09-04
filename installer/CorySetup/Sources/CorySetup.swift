@@ -4,7 +4,7 @@ import AppKit
 // MARK: - Steps
 
 enum Step: Int, CaseIterable {
-    case welcome, trust, requirements, fullDiskAccess, access, installing, done
+    case welcome, trust, requirements, fullDiskAccess, access, installing, agentAccess, done
 
     var title: String {
         switch self {
@@ -14,6 +14,7 @@ enum Step: Int, CaseIterable {
         case .fullDiskAccess: return "Allow access to Messages"
         case .access:         return "Who can use Cory"
         case .installing:     return "Setting up"
+        case .agentAccess:    return "One more permission"
         case .done:           return "Ready"
         }
     }
@@ -116,9 +117,15 @@ final class Model: ObservableObject {
         }
     }
 
-    /// The pronto binary shipped inside this app, so nothing has to be installed first.
-    var bundledPronto: String? {
-        Bundle.main.url(forResource: "pronto", withExtension: nil)?.path
+    /// The agent binary shipped inside this app, so nothing has to be installed first.
+    var bundledCory: String? {
+        Bundle.main.url(forResource: "cory", withExtension: nil)?.path
+    }
+
+    /// Where the agent lives once installed. Full Disk Access is granted per binary, so
+    /// this exact path is what the person has to authorise — not this installer.
+    var installedCoryPath: String {
+        NSHomeDirectory() + "/Library/Application Support/cory/bin/cory"
     }
 
     // Reading the Messages database is the only honest test of Full Disk Access: the
@@ -146,6 +153,39 @@ final class Model: ObservableObject {
     func stopPollingAccess() {
         accessTimer?.invalidate()
         accessTimer = nil
+    }
+
+    /// Whether the INSTALLED agent can read Messages. Asking the binary to do it is the
+    /// only real test; the installer's own permission says nothing about the agent's.
+    @Published var agentHasAccess = false
+    private var agentTimer: Timer?
+
+    func refreshAgentAccess() {
+        guard FileManager.default.isExecutableFile(atPath: installedCoryPath) else {
+            agentHasAccess = false
+            return
+        }
+        let (_, out) = Shell.run(installedCoryPath, ["doctor", "--offline"])
+        // Setup prints this whenever the agent still cannot reach Messages.
+        agentHasAccess = !out.contains("grant Full Disk Access")
+            && !out.lowercased().contains("full disk access")
+    }
+
+    func startPollingAgentAccess() {
+        refreshAgentAccess()
+        agentTimer?.invalidate()
+        agentTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshAgentAccess()
+                if self.agentHasAccess { self.stopPollingAgentAccess() }
+            }
+        }
+    }
+
+    func stopPollingAgentAccess() {
+        agentTimer?.invalidate()
+        agentTimer = nil
     }
 
     func openFullDiskAccessSettings() {
@@ -204,14 +244,23 @@ final class Model: ObservableObject {
     }
 
     func install() {
-        guard let pronto = bundledPronto ?? Shell.which("pronto") else {
+        guard let cory = bundledCory ?? Shell.which("cory") else {
             installLog = "Could not find the Cory program inside this app."
             installFailed = true
             return
         }
         installLog = "Installing…\n"
-        let (code, out) = Shell.run(pronto, setupArguments)
+        let (code, out) = Shell.run(cory, setupArguments)
         installLog += out
+        // Full Disk Access is granted per binary. This installer holding it is what let
+        // setup's checks pass; the agent it just installed is a different binary and needs
+        // its own grant before it can run on its own. Setup says so and stops, so treat
+        // that as a step rather than a failure.
+        if out.contains("grant Full Disk Access") {
+            installFailed = false
+            step = .agentAccess
+            return
+        }
         installFailed = code != 0
         if !installFailed {
             clearSavedProgress()
@@ -300,6 +349,7 @@ struct RootView: View {
             case .fullDiskAccess: fullDiskAccess
             case .access:         access
             case .installing:     installing
+            case .agentAccess:    agentAccess
             case .done:           done
             }
         }
@@ -470,6 +520,47 @@ struct RootView: View {
                 }
             }
         }
+    }
+
+    private var agentAccess: some View {
+        StepChrome(model: model,
+                   heading: "One more permission",
+                   blurb: "Cory is installed. macOS grants this permission to one program at a time, and the installer's own permission does not carry over to Cory itself.") {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("1.  Press Open Settings below.\n2.  Find Full Disk Access.\n3.  Add this file, then switch it on:")
+                    .font(.system(size: 13.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(model.installedCoryPath)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                Text("If Cory is already listed, remove that row and add this file again — switching it off and on is not enough once the program has been replaced.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button("Open Settings") { model.openFullDiskAccessSettings() }
+                    if model.agentHasAccess {
+                        Label("Granted", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Waiting…").foregroundStyle(.secondary).font(.system(size: 12.5))
+                        }
+                    }
+                }
+                Spacer()
+                HStack {
+                    Spacer()
+                    Button("Finish setup") { model.step = .installing; model.install() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.agentHasAccess)
+                }
+            }
+        }
+        .onAppear { model.startPollingAgentAccess() }
+        .onDisappear { model.stopPollingAgentAccess() }
     }
 
     private var done: some View {
