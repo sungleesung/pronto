@@ -22,6 +22,38 @@ enum Step: Int, CaseIterable {
 
 enum AccessChoice: String { case onlyMe, people, anyone }
 
+/// What setup is doing, in words someone can act on.
+///
+/// The progress is real rather than a timer: each stage completes when setup prints the
+/// line that proves it. Nobody outside this project needs to read "claude-effective-
+/// permissions", but everybody understands "Checking your Claude account".
+enum InstallStage: Int, CaseIterable {
+    case starting, messages, claude, permissions, installing, finishing
+
+    var label: String {
+        switch self {
+        case .starting:    return "Getting started"
+        case .messages:    return "Checking your Messages app"
+        case .claude:      return "Checking your Claude account"
+        case .permissions: return "Checking permissions"
+        case .installing:  return "Installing Cory"
+        case .finishing:   return "Almost done"
+        }
+    }
+
+    /// The text setup prints once this stage is genuinely finished.
+    var completionMarker: String? {
+        switch self {
+        case .starting:    return nil
+        case .messages:    return "ok       imessage-read-watch"
+        case .claude:      return "ok       claude-authentication"
+        case .permissions: return "ok       claude-effective-permissions"
+        case .installing:  return "Full Disk Access"
+        case .finishing:   return nil
+        }
+    }
+}
+
 // MARK: - Shell
 
 /// Every call here spawns a process and waits for it. Run on the main actor that freezes
@@ -141,6 +173,24 @@ final class Model: ObservableObject {
     @Published var tag = "@cory" { didSet { store.set(tag, forKey: Key.tag) } }
     @Published var installLog = ""
     @Published var installFailed = false
+    @Published var stage: InstallStage = .starting
+    @Published var showDetails = false
+
+    /// How far along, as a fraction. Tied to stages setup actually reached, so it never
+    /// claims progress that has not happened.
+    var progress: Double {
+        Double(stage.rawValue) / Double(InstallStage.allCases.count - 1)
+    }
+
+    /// Advances the stage when setup prints the line proving one finished.
+    func noteProgress(_ chunk: String) {
+        for candidate in InstallStage.allCases
+        where candidate.rawValue > stage.rawValue {
+            if let marker = candidate.completionMarker, chunk.contains(marker) {
+                stage = candidate
+            }
+        }
+    }
 
     init() {
         // Restore, but never resume into a finished install: a second run should set up
@@ -263,6 +313,13 @@ final class Model: ObservableObject {
         agentTimer = nil
     }
 
+    /// Opens Finder with the agent selected. Asking someone to find a file inside
+    /// ~/Library — which Finder hides by default — is a dead end; letting them drag the
+    /// highlighted file into Settings is not.
+    func revealAgentInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installedCoryPath)])
+    }
+
     func openFullDiskAccessSettings() {
         let url = URL(string:
             "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
@@ -327,9 +384,13 @@ final class Model: ObservableObject {
             return
         }
         installLog = ""
+        stage = .starting
         var out = ""
         let code = await Shell.stream(cory, setupArguments) { chunk in
-            Task { @MainActor in self.installLog += chunk }
+            Task { @MainActor in
+                self.installLog += chunk
+                self.noteProgress(chunk)
+            }
             out += chunk
         }
         // Full Disk Access is granted per binary. This installer holding it is what let
@@ -393,10 +454,21 @@ struct Row: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Group {
-                if ok == nil { Image(systemName: "circle.dotted").foregroundStyle(.secondary) }
-                else if ok! { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
-                else { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange) }
-            }.font(.system(size: 15))
+                // A hollow circle beside a label reads as something to tick. These rows are
+                // statements, not choices, so an informational one gets a plain bullet and
+                // only real states get an icon.
+                if ok == nil {
+                    Circle().fill(Color.secondary.opacity(0.45))
+                        .frame(width: 5, height: 5).padding(.top, 5)
+                } else if ok! {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        .font(.system(size: 15))
+                } else {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+                        .font(.system(size: 15))
+                }
+            }
+            .frame(width: 16, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.system(size: 13.5, weight: .medium))
                 Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -440,8 +512,12 @@ struct RootView: View {
                    heading: "Set up Cory",
                    blurb: "Cory answers your text messages and can do real work on this Mac — look things up, write documents, make files. This takes about three minutes.") {
             VStack(alignment: .leading, spacing: 14) {
-                Row(ok: nil, label: "You'll need a Claude subscription", detail: "Cory signs in with your own Claude account.")
-                Row(ok: nil, label: "You'll grant one permission", detail: "macOS asks you to allow access to Messages. We'll show you where.")
+                Row(ok: nil, label: "You'll need a Claude account",
+                    detail: "Cory uses your own Claude subscription to think.")
+                Row(ok: nil, label: "You'll allow Cory to read your messages",
+                    detail: "Apple asks you to do this yourself. We'll show you exactly where — twice, because Apple asks per app.")
+                Row(ok: nil, label: "Your Mac needs to stay awake",
+                    detail: "Cory runs here, so it only replies while this Mac is on.")
                 Spacer()
                 HStack { Spacer(); Button("Continue") { model.step = .trust }.keyboardShortcut(.defaultAction) }
             }
@@ -488,11 +564,15 @@ struct RootView: View {
                     }
                 }
                 Row(ok: model.claudePath != nil,
-                    label: model.claudePath != nil ? "Claude is installed" : "Claude is not installed",
-                    detail: model.claudePath ?? "Install Claude Code, then press Check again.")
+                    label: model.claudePath != nil ? "Claude is ready" : "Claude is not installed yet",
+                    detail: model.claudePath != nil
+                      ? "Cory thinks using your own Claude account."
+                      : "Cory needs Claude to work. Install it, then press Check again.")
                 Row(ok: model.imsgPath != nil,
-                    label: "Messages helper",
-                    detail: model.imsgPath ?? "Missing — this app should include it.")
+                    label: model.imsgPath != nil ? "Messages is ready" : "Something is missing",
+                    detail: model.imsgPath != nil
+                      ? "Included with this installer — nothing to do."
+                      : "This installer is incomplete. Download it again.")
                 if model.claudePath == nil {
                     Link("Get Claude Code", destination: URL(string: "https://claude.com/product/claude-code")!)
                         .font(.system(size: 12.5))
@@ -515,8 +595,8 @@ struct RootView: View {
 
     private var fullDiskAccess: some View {
         StepChrome(model: model,
-                   heading: "Allow access to Messages",
-                   blurb: "macOS will not let any app grant this for you, so this one step is manual. It takes about twenty seconds.") {
+                   heading: "Let Cory read your messages",
+                   blurb: "Cory replies to your texts, so it needs permission to see them. Apple only lets you give this permission yourself — no app can do it for you. It takes about twenty seconds.") {
             VStack(alignment: .leading, spacing: 14) {
                 Text("1.  Press Open Settings below.\n2.  Find Full Disk Access.\n3.  Turn on Cory by Crate Systems in the list.\n\nmacOS may ask you to quit and reopen this app — that is normal, and it is the only way the permission takes effect. Your answers are saved, so reopening returns you to this step.")
                     .font(.system(size: 13.5))
@@ -597,34 +677,58 @@ struct RootView: View {
     }
 
     private var installing: some View {
-        StepChrome(model: model, heading: "Setting up", blurb: "This takes a few seconds.") {
-            VStack(alignment: .leading, spacing: 12) {
+        StepChrome(model: model,
+                   heading: model.installFailed ? "Something went wrong" : "Setting up Cory",
+                   blurb: model.installFailed
+                     ? "Nothing on your Mac was changed. You can try again, or go back and change your answers."
+                     : "This takes about a minute. You do not need to do anything.") {
+            VStack(alignment: .leading, spacing: 18) {
                 if !model.installFailed {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("This usually takes under a minute.")
-                            .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ProgressView(value: model.progress)
+                            .progressViewStyle(.linear)
+                        Text(model.stage.label)
+                            .font(.system(size: 14, weight: .medium))
+                        // Everything already done, so the wait feels like movement.
+                        ForEach(InstallStage.allCases.filter { $0.rawValue < model.stage.rawValue },
+                                id: \.rawValue) { done in
+                            HStack(spacing: 7) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green).font(.system(size: 12))
+                                Text(done.label)
+                                    .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        Text(model.installLog.isEmpty ? "Starting…" : model.installLog)
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .id("log")
+
+                // The raw output is kept, but folded away. It is reassurance for anyone who
+                // wants it and noise for everyone else.
+                DisclosureGroup(isExpanded: $model.showDetails) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            Text(model.installLog.isEmpty ? "Starting…" : model.installLog)
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                                .id("log")
+                        }
+                        .frame(height: 150)
+                        .onChange(of: model.installLog) { _ in
+                            proxy.scrollTo("log", anchor: .bottom)
+                        }
                     }
-                    .frame(height: 200)
-                    // The single-argument form, so this still builds for macOS 13.
-                    .onChange(of: model.installLog) { _ in
-                        proxy.scrollTo("log", anchor: .bottom)
-                    }
+                } label: {
+                    Text("Show details").font(.system(size: 12.5))
                 }
+
+                Spacer()
                 if model.installFailed {
                     HStack {
                         Button("Back") { model.installFailed = false; model.step = .access }
                         Spacer()
                         Button("Try again") { Task { await model.install() } }
+                            .keyboardShortcut(.defaultAction)
                             .disabled(model.busy)
                     }
                 }
@@ -634,10 +738,10 @@ struct RootView: View {
 
     private var agentAccess: some View {
         StepChrome(model: model,
-                   heading: "One more permission",
-                   blurb: "Cory is installed. macOS grants this permission to one program at a time, and the installer's own permission does not carry over to Cory itself.") {
+                   heading: "One last permission",
+                   blurb: "You gave that permission to this installer. Cory itself is a separate program, and Apple asks for it again — once — for Cory.") {
             VStack(alignment: .leading, spacing: 14) {
-                Text("1.  Press Open Settings below.\n2.  Find Full Disk Access.\n3.  Add this file, then switch it on:")
+                Text("1.  Press Show me the file — Finder opens with it highlighted.\n2.  Press Open Settings.\n3.  Drag the highlighted file into the list, and switch it on.")
                     .font(.system(size: 13.5))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(model.installedCoryPath)
@@ -650,6 +754,7 @@ struct RootView: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
+                    Button("Show me the file") { model.revealAgentInFinder() }
                     Button("Open Settings") { model.openFullDiskAccessSettings() }
                     if model.agentHasAccess {
                         Label("Granted", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
